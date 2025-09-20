@@ -1,20 +1,56 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Automated Resume Relevance Check System
 
-# Run and deploy your AI Studio app
+## Overview
+The **Automated Resume Relevance Check System** is an AI-powered solution designed to streamline resume evaluation for Innomatics Research Labs. It automates the process of matching resumes against job descriptions (JDs), addressing the challenges of manual, inconsistent, and time-consuming evaluations. The system processes thousands of resumes weekly, generates relevance scores, identifies gaps, and provides actionable feedback to students, all accessible via a web-based dashboard for the placement team.
 
-This contains everything you need to run your app locally.
+## Features
+- **Resume and JD Upload**: Supports PDF/DOCX for resumes and job descriptions.
+- **Resume Parsing**: Extracts and standardizes text from resumes.
+- **JD Parsing**: Extracts role title, must-have skills, good-to-have skills, and qualifications.
+- **Relevance Analysis**:
+  - Hard Match: Keyword and skill matching (exact and fuzzy).
+  - Soft Match: Semantic similarity using embeddings and LLMs.
+  - Weighted Scoring: Combines hard and soft matches for a Relevance Score (0–100).
+- **Output**:
+  - Relevance Score (0–100).
+  - Missing skills, projects, or certifications.
+  - Fit verdict (High/Medium/Low suitability).
+  - Personalized improvement suggestions for students.
+- **Web Dashboard**: Allows the placement team to upload JDs, view shortlisted resumes, and filter by job role, score, or location.
+- **Scalability**: Handles thousands of resumes weekly with robust storage and retrieval.
 
-View your app in AI Studio: https://ai.studio/apps/drive/192-uHymZe2LVmHL6CG1wXAIQIRpFBcIN
+## Tech Stack
 
-## Run Locally
+### Core Resume Parsing, AI Framework, and Scoring
+- **Python**: Primary programming language.
+- **PyMuPDF / pdfplumber**: PDF text extraction.
+- **python-docx / docx2txt**: DOCX text extraction.
+- **spaCy / NLTK**: Entity extraction and text normalization.
+- **LangChain**: Orchestrates LLM workflows.
+- **LangGraph**: Structured pipelines for resume–JD analysis.
+- **LangSmith**: Observability, testing, and debugging of LLM chains.
+- **Vector Store (Chroma / FAISS / Pinecone)**: Stores embeddings for semantic search.
+- **LLM Models**: OpenAI GPT / Gemini / Claude / HuggingFace models for semantic matching and feedback.
+- **Keyword Matching**: TF-IDF, BM25, and fuzzy matching.
+- **Semantic Matching**: Embeddings with cosine similarity.
+- **Scoring**: Weighted combination of hard and soft matches.
 
-**Prerequisites:**  Node.js
+### Web Application
+- **Flask / FastAPI**: Backend APIs for processing uploads and serving results.
+- **Streamlit**: Frontend for the placement team dashboard (MVP).
+- **SQLite / PostgreSQL**: Database for storing results, metadata, and audit logs.
 
+## Installation
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Prerequisites
+- Python 3.8+
+- pip for package management
+- SQLite/PostgreSQL database
+- Optional: Vector store (Chroma/FAISS/Pinecone) setup
+- API keys for LLM providers (e.g., OpenAI, HuggingFace)
+
+### Setup
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/your-repo/automated-resume-relevance.git
+   cd automated-resume-relevance
