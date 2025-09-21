@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Skill Scan</title>
+    
+    <!-- React & Babel for in-browser JSX transpilation -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- pdf.js for client-side PDF parsing -->
+    <script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,367 +21,557 @@
         theme: {
           extend: {
             colors: {
-              primary: '#0D47A1',
-              secondary: '#1565C0',
-              accent: '#2196F3',
-              light: '#BBDEFB',
+              primary: '#1E3A8A', // Dark Blue
+              secondary: '#3B82F6', // Medium Blue
+              accent: '#10B981', // Emerald Green
+              highlight: '#F59E0B', // Amber
+              light: '#EFF6FF', // Light Blue-Gray
+              dark: '#111827', // Very Dark Gray
             },
           },
         },
       }
     </script>
-    <!-- React -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Babel to transpile JSX in the browser -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- PDF.js for parsing resumes -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
-<body class="bg-gray-100">
+<body class="bg-light bg-gradient-to-br from-light to-blue-200 min-h-screen font-sans">
     <div id="root"></div>
-
     <script type="text/babel">
-      const { useState, useCallback } = React;
+      const { useState, useEffect, useRef } = React;
 
-      // --- All components and logic are now in this script tag ---
-
-      // from components/icons.tsx
-      const LogoIcon = () => (
-        <svg className="w-10 h-10 text-primary" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      );
+      // --- ICONS ---
       const UploadIcon = () => (
-          <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-      );
-      const PdfIcon = () => (
-        <svg className="w-5 h-5 text-red-500 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
         </svg>
       );
-      const AnalyzeIcon = () => (
-          <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
+      const FileIcon = () => (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
       );
-      const EmptyStateIcon = () => (
-          <svg className="w-16 h-16 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-      );
-      const TrophyIcon = () => (
-          <svg className="w-6 h-6 text-yellow-500" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M18.5,2H5.5a3,3,0,0,0-3,3V11a3,3,0,0,0,3,3h2v2a1,1,0,0,0,1,1h7a1,1,0,0,0,1-1V14h2a3,3,0,0,0,3-3V5A3,3,0,0,0,18.5,2ZM19.5,11a1,1,0,0,1-1,1h-13a1,1,0,0,1-1-1V5a1,1,0,0,1,1-1h13a1,1,0,0,1,1,1Z"/><path d="M9.5,18H8.5a1,1,0,0,0,0,2h7a1,1,0,0,0,0-2h-1V14h-5Z"/>
-          </svg>
-      );
-      const SkillsIcon = () => (
-          <svg className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-      );
-      const ExperienceIcon = () => (
-          <svg className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      const TrashIcon = () => (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
           </svg>
       );
 
-      // from components/Spinner.tsx
-      const Spinner = ({ size = 'md' }) => {
-        const sizeClasses = { sm: 'w-4 h-4', md: 'w-6 h-6', lg: 'w-10 h-10' };
-        return (
-          <svg className={`animate-spin ${sizeClasses[size]} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        );
-      };
+      // --- SPINNER COMPONENT ---
+      const Spinner = () => (
+        <div className="flex justify-center items-center my-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-secondary"></div>
+          <p className="ml-4 text-primary font-semibold">Analyzing Resumes...</p>
+        </div>
+      );
 
-      // from services/resumeParser.ts
-      const { pdfjsLib } = window;
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      const parseResume = async (file) => {
-        const reader = new FileReader();
-        return new Promise((resolve, reject) => {
-          reader.onload = async (event) => {
-            if (!event.target?.result) {
-              return reject(new Error('Failed to read file.'));
+      // --- SERVICES ---
+      const resumeParser = {
+        async parseResume(file) {
+          return new Promise((resolve, reject) => {
+            if (file.type !== 'application/pdf') {
+              reject(new Error('Only PDF files are accepted.'));
+              return;
             }
-            const typedArray = new Uint8Array(event.target.result);
-            try {
-              const pdf = await pdfjsLib.getDocument(typedArray).promise;
-              let fullText = '';
-              for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                fullText += textContent.items.map((item) => item.str).join(' ') + '\n';
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+              try {
+                const pdfData = new Uint8Array(event.target.result);
+                const { pdfjsLib } = globalThis;
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://mozilla.github.io/pdf.js/build/pdf.worker.mjs`;
+
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                let textContent = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                  const page = await pdf.getPage(i);
+                  const text = await page.getTextContent();
+                  textContent += text.items.map(s => s.str).join(' ');
+                }
+
+                // --- NEW: Extract name and email ---
+                let name = file.name.replace('.pdf', '').replace('.PDF', ''); // Fallback to filename
+                let email = 'No email found';
+
+                const emailMatch = textContent.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b/i);
+                if (emailMatch) {
+                    email = emailMatch[0];
+                }
+
+                // Try to find a name - often at the beginning. This looks for 2-3 capitalized words.
+                const nameMatch = textContent.substring(0, 100).match(/([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){1,2})/);
+                 if (nameMatch) {
+                    // Basic check to avoid grabbing generic phrases
+                    if (!nameMatch[0].toLowerCase().includes('resume') && !nameMatch[0].toLowerCase().includes('curriculum')) {
+                        name = nameMatch[0];
+                    }
+                }
+
+                resolve({ textContent, name, email });
+              } catch (error) {
+                console.error("Error parsing PDF:", error);
+                reject(new Error('Could not parse the PDF file.'));
               }
-              resolve(fullText);
-            } catch (error) {
-              console.error('Error parsing PDF:', error);
-              reject(new Error('Could not parse PDF. It might be corrupted.'));
+            };
+            reader.onerror = (error) => reject(error);
+            reader.readAsArrayBuffer(file);
+          });
+        }
+      };
+
+      const scoringService = {
+        scoreResume(resumeText, jobDetails) {
+            let score = 0;
+            let feedback = [];
+            const resumeLower = resumeText.toLowerCase();
+
+            // 1. Score Years of Experience (Max 30 points)
+            const expRegex = /(\d+)\s*(\+)?\s*year/gi;
+            let match;
+            let maxExp = 0;
+            while((match = expRegex.exec(resumeLower)) !== null) {
+                maxExp = Math.max(maxExp, parseInt(match[1]));
             }
-          };
-          reader.onerror = (error) => reject(error);
-          reader.readAsArrayBuffer(file);
-        });
+            
+            const requiredExp = parseInt(jobDetails.experience.split('-')[0] || '0');
+            if (requiredExp > 0) {
+                if (maxExp >= requiredExp) {
+                    score += 30;
+                    feedback.push(`✔️ Experience match (+30 pts): Candidate has ~${maxExp} years, meets requirement of ${jobDetails.experience}.`);
+                } else {
+                    const penalty = Math.round((maxExp / requiredExp) * 30);
+                    score += penalty;
+                    feedback.push(`⚠️ Partial experience match (+${penalty} pts): Candidate has ~${maxExp} years, requirement is ${jobDetails.experience}.`);
+                }
+            }
+            
+            // 2. Score Required Skills (Max 50 points)
+            const requiredSkills = jobDetails.skills.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+            if (requiredSkills.length > 0) {
+                let skillsFound = 0;
+                let foundSkillsList = [];
+                requiredSkills.forEach(skill => {
+                    if (resumeLower.includes(skill)) {
+                        skillsFound++;
+                        foundSkillsList.push(skill);
+                    }
+                });
+                const skillScore = Math.round((skillsFound / requiredSkills.length) * 50);
+                score += skillScore;
+                feedback.push(`✔️ Skills match (+${skillScore} pts): Found ${skillsFound}/${requiredSkills.length} skills (${foundSkillsList.join(', ') || 'none'}).`);
+            }
+
+            // 3. Score Languages (Max 20 points)
+            const requiredLangs = jobDetails.languages.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+             if (requiredLangs.length > 0) {
+                let langsFound = 0;
+                let foundLangsList = [];
+                requiredLangs.forEach(lang => {
+                    if (resumeLower.includes(lang)) {
+                        langsFound++;
+                        foundLangsList.push(lang);
+                    }
+                });
+                const langScore = Math.round((langsFound / requiredLangs.length) * 20);
+                score += langScore;
+                feedback.push(`✔️ Languages match (+${langScore} pts): Found ${langsFound}/${requiredLangs.length} languages (${foundLangsList.join(', ') || 'none'}).`);
+            }
+
+
+            score = Math.min(100, Math.max(0, score)); // Clamp score between 0 and 100
+            return { score: Math.round(score), feedback };
+        }
+      };
+      
+      const localStorageService = {
+        getHistory: () => {
+          try {
+            const history = localStorage.getItem('skillScanHistory');
+            return history ? JSON.parse(history) : [];
+          } catch (e) {
+            return [];
+          }
+        },
+        addHistoryItem: (item) => {
+          const history = localStorageService.getHistory();
+          const newHistory = [item, ...history];
+          localStorage.setItem('skillScanHistory', JSON.stringify(newHistory));
+          return newHistory;
+        },
+        clearHistory: () => {
+          localStorage.removeItem('skillScanHistory');
+        }
       };
 
-      // from components/Header.tsx
-      const Header = () => {
-        return (
-          <header className="bg-white shadow-md">
-            <div className="container mx-auto px-4 md:px-8 py-4 flex items-center">
-              <LogoIcon />
-              <h1 className="text-2xl md:text-3xl font-bold text-primary ml-3">Skill Scan</h1>
+
+      // --- UI COMPONENTS ---
+      const Header = () => (
+        <header className="bg-primary shadow-lg p-4">
+            <div className="container mx-auto flex justify-between items-center">
+                <h1 className="text-3xl font-bold text-white tracking-wider">
+                  ✨ Skill Scan
+                </h1>
             </div>
-          </header>
-        );
-      };
-
-      // from components/JobInputForm.tsx
-      const JobInputForm = ({ jobDetails, setJobDetails }) => {
-        const handleChange = (e) => {
-          const { name, value } = e.target;
-          setJobDetails(prev => ({ ...prev, [name]: name === 'experience' ? parseInt(value, 10) || 0 : value }));
+        </header>
+      );
+      
+      const JobInputForm = ({ jobDetails, setJobDetails, onSubmit }) => {
+        const handleInputChange = (e) => {
+            const { name, value } = e.target;
+            setJobDetails(prev => ({ ...prev, [name]: value }));
         };
+
+        const addValue = (field, value) => {
+            setJobDetails(prev => {
+                const existing = prev[field] ? prev[field].split(',').map(s => s.trim()) : [];
+                if (!existing.includes(value)) {
+                    existing.push(value);
+                }
+                return { ...prev, [field]: existing.join(', ') };
+            });
+        };
+        
+        const setExperience = (value) => {
+             setJobDetails(prev => ({ ...prev, experience: value }));
+        };
+
+        const commonSkills = ["JavaScript", "React", "Python", "Node.js", "SQL", "AWS", "Agile", "Project Management"];
+        const experienceLevels = ["0-1 years", "1-2 years", "3-5 years", "5+ years"];
+
+        const renderPills = (items, onClick, isSelectedCheck) => (
+             <div className="flex flex-wrap gap-2 mt-2">
+                {items.map(item => {
+                    const isSelected = isSelectedCheck ? isSelectedCheck(item) : false;
+                    return (
+                        <button
+                            key={item}
+                            type="button"
+                            onClick={() => onClick(item)}
+                            className={`px-3 py-1 text-sm rounded-full transition-all duration-200 ${isSelected ? 'bg-accent text-white font-bold ring-2 ring-emerald-300' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}`}
+                        >
+                            {item}
+                        </button>
+                    );
+                 })}
+            </div>
+        );
+
         return (
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Job Description (Optional)</label>
-              <textarea id="description" name="description" rows={4} value={jobDetails.description} onChange={handleChange} className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent" placeholder="Paste the full job description here..."/>
-            </div>
-            <div>
-              <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-1">Required Skills</label>
-              <input type="text" id="skills" name="skills" value={jobDetails.skills} onChange={handleChange} className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent" placeholder="e.g., react, typescript, node.js" />
-              <p className="text-xs text-gray-500 mt-1">Separate skills with a comma.</p>
-            </div>
-            <div>
-              <label htmlFor="experience" className="block text-sm font-medium text-gray-700 mb-1">Minimum Years of Experience</label>
-              <input type="number" id="experience" name="experience" value={jobDetails.experience} onChange={handleChange} min="0" className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent" placeholder="e.g., 3" />
-            </div>
-          </div>
+            <form onSubmit={onSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700">Job Title</label>
+                        <input type="text" name="jobTitle" id="jobTitle" value={jobDetails.jobTitle} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary" placeholder="e.g., Senior Frontend Developer" required />
+                    </div>
+                     <div>
+                        <label htmlFor="numToHire" className="block text-sm font-medium text-gray-700">Number of Candidates to Hire</label>
+                        <input type="number" name="numToHire" id="numToHire" value={jobDetails.numToHire} min="1" onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary" required />
+                    </div>
+                </div>
+
+                <div>
+                    <label htmlFor="experience" className="block text-sm font-medium text-gray-700">Years of Experience</label>
+                     {renderPills(experienceLevels, item => setExperience(item), item => jobDetails.experience === item)}
+                    <input type="text" name="experience" id="experience" value={jobDetails.experience} onChange={handleInputChange} className="mt-2 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary" placeholder="Type custom value, e.g., 2-4 years" required />
+                </div>
+
+                <div>
+                    <label htmlFor="skills" className="block text-sm font-medium text-gray-700">Required Skills (comma-separated)</label>
+                    {renderPills(commonSkills, skill => addValue('skills', skill))}
+                    <input type="text" name="skills" id="skills" value={jobDetails.skills} onChange={handleInputChange} className="mt-2 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary" placeholder="e.g., TypeScript, GraphQL, Jest" required />
+                </div>
+                 <div>
+                    <label htmlFor="languages" className="block text-sm font-medium text-gray-700">Languages Known (comma-separated)</label>
+                    <input type="text" name="languages" id="languages" value={jobDetails.languages} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary" placeholder="e.g., English, Spanish" />
+                </div>
+            </form>
         );
       };
       
-      // from components/ResumeUploader.tsx
-      const ResumeUploader = ({ resumeFiles, setResumeFiles }) => {
-        const [isDragging, setIsDragging] = useState(false);
-        const handleFileChange = (e) => { if (e.target.files) { setResumeFiles(Array.from(e.target.files)); }};
-        const handleDrop = useCallback((e) => {
-          e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-          if (e.dataTransfer.files?.length > 0) {
-            const pdfFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
-            setResumeFiles(pdfFiles);
-          }
-        }, []);
-        const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
-        const handleDragEnter = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true);}, []);
-        const handleDragLeave = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false);}, []);
-        const removeFile = (fileName) => setResumeFiles(resumeFiles.filter(file => file.name !== fileName));
-        return (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Resumes</label>
-            <div onDrop={handleDrop} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} className={`flex justify-center items-center w-full px-6 py-10 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${isDragging ? 'border-accent bg-light' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}>
-              <div className="text-center">
-                <UploadIcon />
-                <p className="mt-2 text-sm text-gray-600"><span className="font-semibold text-accent">Click to upload</span> or drag and drop</p>
-                <p className="text-xs text-gray-500">PDF files only</p>
-                <input id="file-upload" name="file-upload" type="file" className="sr-only" accept=".pdf" multiple onChange={handleFileChange} />
-              </div>
-            </div>
-            {resumeFiles.length > 0 && (
-              <div className="mt-4">
-                <h4 className="font-semibold text-sm text-gray-600">Selected Files:</h4>
-                <ul className="mt-2 space-y-2 max-h-48 overflow-y-auto pr-2">
-                  {resumeFiles.map((file) => (
-                    <li key={file.name} className="flex items-center justify-between text-sm bg-gray-100 p-2 rounded-md">
-                      <div className="flex items-center truncate"><PdfIcon /><span className="ml-2 truncate" title={file.name}>{file.name}</span></div>
-                      <button onClick={() => removeFile(file.name)} className="text-red-500 hover:text-red-700 font-bold ml-2">&times;</button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        );
-      };
+      const ResumeUploader = ({ files, setFiles }) => {
+          const fileInputRef = useRef(null);
+          
+          const handleFileChange = (e) => {
+              const newFiles = Array.from(e.target.files);
+              setFiles(prev => [...prev, ...newFiles]);
+          };
 
-      // from components/ResultsDisplay.tsx
-      const ResultsDisplay = ({ results, isLoading }) => {
-        const ResultCard = ({ result, rank }) => {
-          const getScoreColor = (score) => {
-            if (score >= 80) return 'bg-green-500';
-            if (score >= 60) return 'bg-yellow-500';
-            return 'bg-red-500';
+          const handleDrop = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.classList.remove('border-accent', 'bg-emerald-50');
+              const newFiles = Array.from(e.dataTransfer.files);
+              setFiles(prev => [...prev, ...newFiles]);
           };
-          const getBorderColor = (rank) => {
-            if (rank === 1) return 'border-yellow-400';
-            if (rank === 2) return 'border-gray-300';
-            if (rank === 3) return 'border-yellow-600';
-            return 'border-gray-200';
+
+          const handleDragOver = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.classList.add('border-accent', 'bg-emerald-50');
           };
+          
+          const handleDragLeave = (e) => {
+               e.preventDefault();
+               e.stopPropagation();
+               e.currentTarget.classList.remove('border-accent', 'bg-emerald-50');
+          };
+          
+          const triggerFileSelect = () => {
+              fileInputRef.current.click();
+          };
+
+          const removeFile = (fileName) => {
+              setFiles(prev => prev.filter(f => f.name !== fileName));
+          };
+
           return (
-            <div className={`bg-white rounded-xl shadow-md p-5 border-l-4 ${getBorderColor(rank)} transition hover:shadow-lg hover:scale-[1.02]`}>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                    {rank === 1 && <TrophyIcon />}
-                    <p className={`text-lg font-bold ${rank === 1 ? 'text-yellow-500' : 'text-primary'} ml-2`}>Rank #{rank}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-extrabold text-gray-800">{result.score}%</p>
-                  <p className="text-xs text-gray-500">Match Score</p>
-                </div>
+            <div>
+              <div 
+                  onClick={triggerFileSelect}
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  className="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md cursor-pointer transition-colors duration-200 hover:border-secondary"
+              >
+                  <div className="space-y-1 text-center">
+                      <UploadIcon />
+                      <div className="flex text-sm text-gray-600">
+                          <p className="pl-1">
+                            <span className="font-semibold text-secondary">Click to upload</span> or drag and drop
+                          </p>
+                      </div>
+                      <p className="text-xs text-gray-500">PDF files only</p>
+                  </div>
               </div>
-              <h3 className="text-md font-semibold text-gray-700 truncate mb-3" title={result.fileName}>{result.fileName}</h3>
-              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4"><div className={`${getScoreColor(result.score)} h-2.5 rounded-full`} style={{ width: `${result.score}%` }}></div></div>
-              {result.error ? (<p className="text-red-500 text-sm">{result.error}</p>) : (
-                <div className="space-y-3 text-sm">
-                    <div className="flex items-start"><SkillsIcon/><div className="ml-2"><p className="font-semibold text-gray-600">Matched Skills:</p>{result.matchedSkills.length > 0 ? (<div className="flex flex-wrap gap-1 mt-1">{result.matchedSkills.map(skill => (<span key={skill} className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{skill}</span>))}</div>) : <p className="text-gray-500 italic text-xs">No matching skills found.</p>}</div></div>
-                    <div className="flex items-start"><ExperienceIcon/><div className="ml-2"><p className="font-semibold text-gray-600">Experience Detected:</p><p className="text-gray-700">{result.foundExperience > 0 ? `${result.foundExperience} years` : 'Not specified'}</p></div></div>
-                </div>
+              <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  onChange={handleFileChange}
+                  className="hidden" 
+                  accept=".pdf" 
+                  multiple 
+              />
+              {files.length > 0 && (
+                  <div className="mt-4">
+                      <h3 className="text-md font-medium text-gray-800">Selected Resumes:</h3>
+                      <ul className="mt-2 space-y-2">
+                          {files.map(file => (
+                              <li key={file.name} className="flex items-center justify-between bg-white p-2 rounded-md shadow-sm">
+                                <div className="flex items-center gap-2">
+                                  <FileIcon />
+                                  <span className="text-sm text-gray-700">{file.name}</span>
+                                </div>
+                                  <button onClick={() => removeFile(file.name)} className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition-colors">
+                                    <TrashIcon />
+                                  </button>
+                              </li>
+                          ))}
+                      </ul>
+                  </div>
               )}
             </div>
           );
+      };
+      
+      const ResultsDisplay = ({ results, numToHire }) => {
+        if (results.length === 0) return null;
+        
+        const getScoreColor = (score) => {
+          if (score >= 85) return 'text-accent'; // Green
+          if (score >= 60) return 'text-highlight'; // Yellow
+          return 'text-red-500'; // Red
+        }
+
+        const getTopCandidateStrengths = (feedback) => {
+            return feedback.filter(item => item.startsWith('✔️')).map(item => item.substring(2)); // Remove the emoji
         };
 
-        if (isLoading) {
-          return (
-            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 flex flex-col items-center justify-center min-h-[400px]">
-              <Spinner size="lg" />
-              <p className="mt-4 text-lg text-primary font-semibold">Analyzing resumes, please wait...</p>
-              <p className="mt-1 text-sm text-gray-500">This might take a moment.</p>
-            </div>
-          );
-        }
-        if (results.length === 0) {
-          return (
-            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 flex flex-col items-center justify-center text-center min-h-[400px]">
-              <EmptyStateIcon />
-              <h3 className="mt-4 text-xl font-semibold text-gray-700">Ready for Analysis</h3>
-              <p className="mt-1 text-gray-500">Enter job details, upload resumes, and click 'Analyze' to see the ranked results here.</p>
-            </div>
-          );
-        }
         return (
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
-            <h2 className="text-2xl font-bold text-primary mb-6">Analysis Results</h2>
-            <div className="space-y-4">{results.map((result, index) => <ResultCard key={result.fileName} result={result} rank={index + 1} />)}</div>
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold text-dark mb-4">Analysis Results</h2>
+            <div className="space-y-4">
+              {results.map((result, index) => {
+                const isTopCandidate = index < parseInt(numToHire || 1, 10);
+                const strengths = isTopCandidate ? getTopCandidateStrengths(result.feedback) : [];
+
+                return (
+                    <details key={index} className={`bg-white rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl ${isTopCandidate ? 'border-2 border-highlight bg-amber-50' : ''}`}>
+                    <summary className="p-4 cursor-pointer flex justify-between items-center font-semibold">
+                        <div className="flex items-center gap-4 flex-wrap">
+                            <span className={`text-3xl font-bold ${getScoreColor(result.score)}`}>{result.score}%</span>
+                            <div>
+                                <span className="text-lg text-gray-800">{result.name}</span>
+                                <span className="block text-sm text-gray-500">{result.email}</span>
+                            </div>
+                        </div>
+                        <span className="text-sm text-gray-500 hidden md:inline">Click to see details</span>
+                    </summary>
+                    <div className="p-4 bg-gray-50 border-t border-gray-200">
+                        {isTopCandidate && strengths.length > 0 && (
+                             <div className="mb-4 p-3 bg-emerald-100 rounded-md border-l-4 border-accent">
+                                <h4 className="font-bold text-accent-800">⭐ Key Strengths</h4>
+                                <ul className="list-disc list-inside space-y-1 text-sm text-emerald-900 mt-1">
+                                    {strengths.map((item, i) => <li key={i}>{item}</li>)}
+                                </ul>
+                            </div>
+                        )}
+                        <h4 className="font-semibold text-gray-700 mb-2">Detailed Feedback:</h4>
+                        <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                        {result.feedback.map((item, i) => <li key={i}>{item}</li>)}
+                        </ul>
+                    </div>
+                    </details>
+                )
+              })}
+            </div>
           </div>
         );
       };
 
-      // from App.tsx
+      const AnalysisHistory = ({ history, onClear }) => {
+          if (history.length === 0) return null;
+          
+          return (
+             <div className="mt-12">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-dark">Analysis History</h2>
+                    <button 
+                        onClick={onClear} 
+                        className="px-4 py-2 text-sm font-medium text-red-600 bg-red-100 rounded-md hover:bg-red-200 transition-colors"
+                    >
+                        Clear History
+                    </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {history.map(item => (
+                        <div key={item.date} className="bg-white p-4 rounded-lg shadow-md border-l-4 border-secondary">
+                            <p className="text-sm text-gray-500">{new Date(item.date).toLocaleString()}</p>
+                            <p className="font-semibold text-primary mt-2">{item.jobDetails.jobTitle || 'N/A'}</p>
+                            <div className="text-xs text-gray-600 mt-2 space-y-1">
+                                <p><strong>Experience:</strong> {item.jobDetails.experience}</p>
+                                <p><strong>Skills:</strong> {item.jobDetails.skills}</p>
+                            </div>
+                            <hr className="my-2" />
+                            <p className="text-sm">Scanned <strong>{item.scanCount}</strong> resumes.</p>
+                            <p className="text-sm">Top score: <strong className="text-accent">{item.topScore}%</strong></p>
+                        </div>
+                    ))}
+                </div>
+             </div>
+          );
+      }
+
+      // --- MAIN APP COMPONENT ---
       const App = () => {
-        const [jobDetails, setJobDetails] = useState({ description: '', skills: '', experience: 0 });
-        const [resumeFiles, setResumeFiles] = useState([]);
-        const [analysisResults, setAnalysisResults] = useState([]);
-        const [isLoading, setIsLoading] = useState(false);
-        const [error, setError] = useState(null);
+        const [jobDetails, setJobDetails] = useState({ jobTitle: '', experience: '', skills: '', languages: '', numToHire: '1' });
+        const [files, setFiles] = useState([]);
+        const [results, setResults] = useState([]);
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState('');
+        const [history, setHistory] = useState([]);
+        
+        useEffect(() => {
+          setHistory(localStorageService.getHistory());
+        }, []);
 
-        const scoreResume = (resumeText, job) => {
-            const text = resumeText.toLowerCase();
-            const requiredSkills = job.skills.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-            
-            let matchedSkills = [];
-            let skillScore = 0;
-            const skillWeight = 70;
+        const handleSubmit = async (e) => {
+          e.preventDefault();
+          if (files.length === 0) {
+            setError('Please upload at least one resume.');
+            return;
+          }
+          
+          setLoading(true);
+          setError('');
+          setResults([]);
 
-            if (requiredSkills.length > 0) {
-                requiredSkills.forEach(skill => {
-                    if (text.includes(skill)) {
-                        matchedSkills.push(skill);
-                    }
-                });
-                skillScore = (matchedSkills.length / requiredSkills.length) * skillWeight;
-            } else {
-                skillScore = skillWeight; 
-            }
+          const analysisPromises = files.map(file =>
+            resumeParser.parseResume(file)
+              .then(({ textContent, name, email }) => ({
+                fileName: file.name,
+                name,
+                email,
+                ...scoringService.scoreResume(textContent, jobDetails)
+              }))
+              .catch(err => ({
+                fileName: file.name,
+                name: file.name,
+                email: 'Error',
+                score: 0,
+                feedback: ['Error processing file: ' + err.message]
+              }))
+          );
 
-            let experienceScore = 0;
-            const experienceWeight = 30;
-            const experienceRegex = /(\d{1,2})\+?\s*(years|yrs|year)/g;
-            let match;
-            let maxExperienceFound = 0;
-            while ((match = experienceRegex.exec(text)) !== null) {
-                const years = parseInt(match[1], 10);
-                if (years > maxExperienceFound) maxExperienceFound = years;
-            }
-
-            if (job.experience > 0) {
-              if (maxExperienceFound >= job.experience) {
-                experienceScore = experienceWeight;
-              } else if (maxExperienceFound > 0) {
-                experienceScore = (maxExperienceFound / job.experience) * experienceWeight * 0.5;
-              }
-            } else {
-                experienceScore = experienceWeight;
-            }
-            
-            const totalScore = Math.min(100, Math.round(skillScore + experienceScore));
-
-            return { fileName: '', score: totalScore, matchedSkills, foundExperience: maxExperienceFound };
+          const newResults = await Promise.all(analysisPromises);
+          newResults.sort((a, b) => b.score - a.score);
+          setResults(newResults);
+          setLoading(false);
+          
+          // Save to history
+          const topScore = newResults.length > 0 ? newResults[0].score : 0;
+          const historyItem = {
+            date: new Date().toISOString(),
+            jobDetails,
+            scanCount: files.length,
+            topScore
+          };
+          const updatedHistory = localStorageService.addHistoryItem(historyItem);
+          setHistory(updatedHistory);
+        };
+        
+        const handleClearHistory = () => {
+          localStorageService.clearHistory();
+          setHistory([]);
         };
 
-        const handleAnalyze = useCallback(async () => {
-          if (resumeFiles.length === 0) { setError('Please upload at least one resume.'); return; }
-          if (!jobDetails.skills && jobDetails.experience === 0) { setError('Please specify required skills or minimum experience.'); return; }
-          setIsLoading(true); setError(null); setAnalysisResults([]);
-          try {
-            const results = [];
-            for (const file of resumeFiles) {
-              try {
-                const resumeText = await parseResume(file);
-                const result = scoreResume(resumeText, jobDetails);
-                result.fileName = file.name;
-                results.push(result);
-              } catch (parseError) {
-                console.error(`Failed to parse ${file.name}:`, parseError);
-                results.push({ fileName: file.name, score: 0, matchedSkills: [], foundExperience: 0, error: 'Failed to parse PDF.' });
-              }
-            }
-            results.sort((a, b) => b.score - a.score);
-            setAnalysisResults(results);
-          } catch (e) {
-            setError('An unexpected error occurred during analysis.');
-            console.error(e);
-          } finally {
-            setIsLoading(false);
-          }
-        }, [resumeFiles, jobDetails]);
-
         return (
-          <div className="min-h-screen bg-gray-50 text-gray-800">
+          <>
             <Header />
             <main className="container mx-auto p-4 md:p-8">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-4 bg-white p-6 rounded-2xl shadow-lg border border-gray-200 h-fit">
-                  <h2 className="text-2xl font-bold text-primary mb-6">Evaluation Criteria</h2>
-                  <div className="space-y-6">
-                    <JobInputForm jobDetails={jobDetails} setJobDetails={setJobDetails} />
-                    <ResumeUploader resumeFiles={resumeFiles} setResumeFiles={setResumeFiles} />
-                    {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-                    <button onClick={handleAnalyze} disabled={isLoading || resumeFiles.length === 0} className="w-full bg-primary hover:bg-secondary text-white font-bold py-3 px-4 rounded-lg transition duration-300 ease-in-out flex items-center justify-center disabled:bg-gray-400 disabled:cursor-not-allowed">
-                      {isLoading ? <Spinner /> : <AnalyzeIcon />}
-                      <span className="ml-2">{isLoading ? 'Analyzing...' : 'Analyze Resumes'}</span>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                
+                {/* Left Panel: Inputs */}
+                <div className="bg-white p-6 rounded-lg shadow-lg border-t-4 border-accent">
+                    <h2 className="text-2xl font-bold text-dark mb-4">1. Define Job Criteria</h2>
+                    <JobInputForm jobDetails={jobDetails} setJobDetails={setJobDetails} onSubmit={handleSubmit} />
+                    
+                    <hr className="my-6" />
+
+                    <h2 className="text-2xl font-bold text-dark mb-4">2. Upload Resumes</h2>
+                    <ResumeUploader files={files} setFiles={setFiles} />
+                    
+                    {error && <p className="text-red-500 mt-4">{error}</p>}
+                    
+                    <button
+                        onClick={handleSubmit}
+                        disabled={loading}
+                        className="w-full mt-6 bg-secondary text-white font-bold py-3 px-4 rounded-md hover:bg-primary transition-transform duration-200 transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                        {loading ? 'Analyzing...' : `Analyze ${files.length} Resume(s)`}
                     </button>
-                  </div>
                 </div>
-                <div className="lg:col-span-8">
-                  <ResultsDisplay results={analysisResults} isLoading={isLoading} />
+
+                {/* Right Panel: Results */}
+                <div className="bg-white p-6 rounded-lg shadow-lg">
+                  {loading && <Spinner />}
+                  {!loading && results.length > 0 && <ResultsDisplay results={results} numToHire={jobDetails.numToHire} />}
+                  {!loading && results.length === 0 && (
+                      <div className="text-center text-gray-500 flex flex-col items-center justify-center h-full">
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                           </svg>
+                           <p className="text-xl font-semibold">Your results will appear here</p>
+                           <p className="mt-2">Fill out the form and upload resumes to get started.</p>
+                      </div>
+                  )}
                 </div>
               </div>
+              
+              <AnalysisHistory history={history} onClear={handleClearHistory} />
+
             </main>
-          </div>
+          </>
         );
       };
 
-      // --- Renders the App ---
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(<App />);
+      ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>
