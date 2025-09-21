@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF--8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+<head>
+    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Skill Scan</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -20,22 +20,358 @@
         },
       }
     </script>
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-    "react/": "https://aistudiocdn.com/react@^19.1.1/",
-    "react": "https://aistudiocdn.com/react@^19.1.1",
-    "path": "https://aistudiocdn.com/path@^0.12.7",
-    "vite": "https://aistudiocdn.com/vite@^7.1.6",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.0.3"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel to transpile JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- PDF.js for parsing resumes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
-  <body class="bg-gray-100">
+<body class="bg-gray-100">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+
+    <script type="text/babel">
+      const { useState, useCallback } = React;
+
+      // --- All components and logic are now in this script tag ---
+
+      // from components/icons.tsx
+      const LogoIcon = () => (
+        <svg className="w-10 h-10 text-primary" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+      const UploadIcon = () => (
+          <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+              <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+      );
+      const PdfIcon = () => (
+        <svg className="w-5 h-5 text-red-500 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      );
+      const AnalyzeIcon = () => (
+          <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+      );
+      const EmptyStateIcon = () => (
+          <svg className="w-16 h-16 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+      );
+      const TrophyIcon = () => (
+          <svg className="w-6 h-6 text-yellow-500" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M18.5,2H5.5a3,3,0,0,0-3,3V11a3,3,0,0,0,3,3h2v2a1,1,0,0,0,1,1h7a1,1,0,0,0,1-1V14h2a3,3,0,0,0,3-3V5A3,3,0,0,0,18.5,2ZM19.5,11a1,1,0,0,1-1,1h-13a1,1,0,0,1-1-1V5a1,1,0,0,1,1-1h13a1,1,0,0,1,1,1Z"/><path d="M9.5,18H8.5a1,1,0,0,0,0,2h7a1,1,0,0,0,0-2h-1V14h-5Z"/>
+          </svg>
+      );
+      const SkillsIcon = () => (
+          <svg className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+      );
+      const ExperienceIcon = () => (
+          <svg className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+      );
+
+      // from components/Spinner.tsx
+      const Spinner = ({ size = 'md' }) => {
+        const sizeClasses = { sm: 'w-4 h-4', md: 'w-6 h-6', lg: 'w-10 h-10' };
+        return (
+          <svg className={`animate-spin ${sizeClasses[size]} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        );
+      };
+
+      // from services/resumeParser.ts
+      const { pdfjsLib } = window;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const parseResume = async (file) => {
+        const reader = new FileReader();
+        return new Promise((resolve, reject) => {
+          reader.onload = async (event) => {
+            if (!event.target?.result) {
+              return reject(new Error('Failed to read file.'));
+            }
+            const typedArray = new Uint8Array(event.target.result);
+            try {
+              const pdf = await pdfjsLib.getDocument(typedArray).promise;
+              let fullText = '';
+              for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                fullText += textContent.items.map((item) => item.str).join(' ') + '\n';
+              }
+              resolve(fullText);
+            } catch (error) {
+              console.error('Error parsing PDF:', error);
+              reject(new Error('Could not parse PDF. It might be corrupted.'));
+            }
+          };
+          reader.onerror = (error) => reject(error);
+          reader.readAsArrayBuffer(file);
+        });
+      };
+
+      // from components/Header.tsx
+      const Header = () => {
+        return (
+          <header className="bg-white shadow-md">
+            <div className="container mx-auto px-4 md:px-8 py-4 flex items-center">
+              <LogoIcon />
+              <h1 className="text-2xl md:text-3xl font-bold text-primary ml-3">Skill Scan</h1>
+            </div>
+          </header>
+        );
+      };
+
+      // from components/JobInputForm.tsx
+      const JobInputForm = ({ jobDetails, setJobDetails }) => {
+        const handleChange = (e) => {
+          const { name, value } = e.target;
+          setJobDetails(prev => ({ ...prev, [name]: name === 'experience' ? parseInt(value, 10) || 0 : value }));
+        };
+        return (
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Job Description (Optional)</label>
+              <textarea id="description" name="description" rows={4} value={jobDetails.description} onChange={handleChange} className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent" placeholder="Paste the full job description here..."/>
+            </div>
+            <div>
+              <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-1">Required Skills</label>
+              <input type="text" id="skills" name="skills" value={jobDetails.skills} onChange={handleChange} className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent" placeholder="e.g., react, typescript, node.js" />
+              <p className="text-xs text-gray-500 mt-1">Separate skills with a comma.</p>
+            </div>
+            <div>
+              <label htmlFor="experience" className="block text-sm font-medium text-gray-700 mb-1">Minimum Years of Experience</label>
+              <input type="number" id="experience" name="experience" value={jobDetails.experience} onChange={handleChange} min="0" className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent" placeholder="e.g., 3" />
+            </div>
+          </div>
+        );
+      };
+      
+      // from components/ResumeUploader.tsx
+      const ResumeUploader = ({ resumeFiles, setResumeFiles }) => {
+        const [isDragging, setIsDragging] = useState(false);
+        const handleFileChange = (e) => { if (e.target.files) { setResumeFiles(Array.from(e.target.files)); }};
+        const handleDrop = useCallback((e) => {
+          e.preventDefault(); e.stopPropagation(); setIsDragging(false);
+          if (e.dataTransfer.files?.length > 0) {
+            const pdfFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+            setResumeFiles(pdfFiles);
+          }
+        }, []);
+        const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
+        const handleDragEnter = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true);}, []);
+        const handleDragLeave = useCallback((e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false);}, []);
+        const removeFile = (fileName) => setResumeFiles(resumeFiles.filter(file => file.name !== fileName));
+        return (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Resumes</label>
+            <div onDrop={handleDrop} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} className={`flex justify-center items-center w-full px-6 py-10 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${isDragging ? 'border-accent bg-light' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}>
+              <div className="text-center">
+                <UploadIcon />
+                <p className="mt-2 text-sm text-gray-600"><span className="font-semibold text-accent">Click to upload</span> or drag and drop</p>
+                <p className="text-xs text-gray-500">PDF files only</p>
+                <input id="file-upload" name="file-upload" type="file" className="sr-only" accept=".pdf" multiple onChange={handleFileChange} />
+              </div>
+            </div>
+            {resumeFiles.length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-semibold text-sm text-gray-600">Selected Files:</h4>
+                <ul className="mt-2 space-y-2 max-h-48 overflow-y-auto pr-2">
+                  {resumeFiles.map((file) => (
+                    <li key={file.name} className="flex items-center justify-between text-sm bg-gray-100 p-2 rounded-md">
+                      <div className="flex items-center truncate"><PdfIcon /><span className="ml-2 truncate" title={file.name}>{file.name}</span></div>
+                      <button onClick={() => removeFile(file.name)} className="text-red-500 hover:text-red-700 font-bold ml-2">&times;</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      // from components/ResultsDisplay.tsx
+      const ResultsDisplay = ({ results, isLoading }) => {
+        const ResultCard = ({ result, rank }) => {
+          const getScoreColor = (score) => {
+            if (score >= 80) return 'bg-green-500';
+            if (score >= 60) return 'bg-yellow-500';
+            return 'bg-red-500';
+          };
+          const getBorderColor = (rank) => {
+            if (rank === 1) return 'border-yellow-400';
+            if (rank === 2) return 'border-gray-300';
+            if (rank === 3) return 'border-yellow-600';
+            return 'border-gray-200';
+          };
+          return (
+            <div className={`bg-white rounded-xl shadow-md p-5 border-l-4 ${getBorderColor(rank)} transition hover:shadow-lg hover:scale-[1.02]`}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                    {rank === 1 && <TrophyIcon />}
+                    <p className={`text-lg font-bold ${rank === 1 ? 'text-yellow-500' : 'text-primary'} ml-2`}>Rank #{rank}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-extrabold text-gray-800">{result.score}%</p>
+                  <p className="text-xs text-gray-500">Match Score</p>
+                </div>
+              </div>
+              <h3 className="text-md font-semibold text-gray-700 truncate mb-3" title={result.fileName}>{result.fileName}</h3>
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4"><div className={`${getScoreColor(result.score)} h-2.5 rounded-full`} style={{ width: `${result.score}%` }}></div></div>
+              {result.error ? (<p className="text-red-500 text-sm">{result.error}</p>) : (
+                <div className="space-y-3 text-sm">
+                    <div className="flex items-start"><SkillsIcon/><div className="ml-2"><p className="font-semibold text-gray-600">Matched Skills:</p>{result.matchedSkills.length > 0 ? (<div className="flex flex-wrap gap-1 mt-1">{result.matchedSkills.map(skill => (<span key={skill} className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{skill}</span>))}</div>) : <p className="text-gray-500 italic text-xs">No matching skills found.</p>}</div></div>
+                    <div className="flex items-start"><ExperienceIcon/><div className="ml-2"><p className="font-semibold text-gray-600">Experience Detected:</p><p className="text-gray-700">{result.foundExperience > 0 ? `${result.foundExperience} years` : 'Not specified'}</p></div></div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        if (isLoading) {
+          return (
+            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 flex flex-col items-center justify-center min-h-[400px]">
+              <Spinner size="lg" />
+              <p className="mt-4 text-lg text-primary font-semibold">Analyzing resumes, please wait...</p>
+              <p className="mt-1 text-sm text-gray-500">This might take a moment.</p>
+            </div>
+          );
+        }
+        if (results.length === 0) {
+          return (
+            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 flex flex-col items-center justify-center text-center min-h-[400px]">
+              <EmptyStateIcon />
+              <h3 className="mt-4 text-xl font-semibold text-gray-700">Ready for Analysis</h3>
+              <p className="mt-1 text-gray-500">Enter job details, upload resumes, and click 'Analyze' to see the ranked results here.</p>
+            </div>
+          );
+        }
+        return (
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+            <h2 className="text-2xl font-bold text-primary mb-6">Analysis Results</h2>
+            <div className="space-y-4">{results.map((result, index) => <ResultCard key={result.fileName} result={result} rank={index + 1} />)}</div>
+          </div>
+        );
+      };
+
+      // from App.tsx
+      const App = () => {
+        const [jobDetails, setJobDetails] = useState({ description: '', skills: '', experience: 0 });
+        const [resumeFiles, setResumeFiles] = useState([]);
+        const [analysisResults, setAnalysisResults] = useState([]);
+        const [isLoading, setIsLoading] = useState(false);
+        const [error, setError] = useState(null);
+
+        const scoreResume = (resumeText, job) => {
+            const text = resumeText.toLowerCase();
+            const requiredSkills = job.skills.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+            
+            let matchedSkills = [];
+            let skillScore = 0;
+            const skillWeight = 70;
+
+            if (requiredSkills.length > 0) {
+                requiredSkills.forEach(skill => {
+                    if (text.includes(skill)) {
+                        matchedSkills.push(skill);
+                    }
+                });
+                skillScore = (matchedSkills.length / requiredSkills.length) * skillWeight;
+            } else {
+                skillScore = skillWeight; 
+            }
+
+            let experienceScore = 0;
+            const experienceWeight = 30;
+            const experienceRegex = /(\d{1,2})\+?\s*(years|yrs|year)/g;
+            let match;
+            let maxExperienceFound = 0;
+            while ((match = experienceRegex.exec(text)) !== null) {
+                const years = parseInt(match[1], 10);
+                if (years > maxExperienceFound) maxExperienceFound = years;
+            }
+
+            if (job.experience > 0) {
+              if (maxExperienceFound >= job.experience) {
+                experienceScore = experienceWeight;
+              } else if (maxExperienceFound > 0) {
+                experienceScore = (maxExperienceFound / job.experience) * experienceWeight * 0.5;
+              }
+            } else {
+                experienceScore = experienceWeight;
+            }
+            
+            const totalScore = Math.min(100, Math.round(skillScore + experienceScore));
+
+            return { fileName: '', score: totalScore, matchedSkills, foundExperience: maxExperienceFound };
+        };
+
+        const handleAnalyze = useCallback(async () => {
+          if (resumeFiles.length === 0) { setError('Please upload at least one resume.'); return; }
+          if (!jobDetails.skills && jobDetails.experience === 0) { setError('Please specify required skills or minimum experience.'); return; }
+          setIsLoading(true); setError(null); setAnalysisResults([]);
+          try {
+            const results = [];
+            for (const file of resumeFiles) {
+              try {
+                const resumeText = await parseResume(file);
+                const result = scoreResume(resumeText, jobDetails);
+                result.fileName = file.name;
+                results.push(result);
+              } catch (parseError) {
+                console.error(`Failed to parse ${file.name}:`, parseError);
+                results.push({ fileName: file.name, score: 0, matchedSkills: [], foundExperience: 0, error: 'Failed to parse PDF.' });
+              }
+            }
+            results.sort((a, b) => b.score - a.score);
+            setAnalysisResults(results);
+          } catch (e) {
+            setError('An unexpected error occurred during analysis.');
+            console.error(e);
+          } finally {
+            setIsLoading(false);
+          }
+        }, [resumeFiles, jobDetails]);
+
+        return (
+          <div className="min-h-screen bg-gray-50 text-gray-800">
+            <Header />
+            <main className="container mx-auto p-4 md:p-8">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-4 bg-white p-6 rounded-2xl shadow-lg border border-gray-200 h-fit">
+                  <h2 className="text-2xl font-bold text-primary mb-6">Evaluation Criteria</h2>
+                  <div className="space-y-6">
+                    <JobInputForm jobDetails={jobDetails} setJobDetails={setJobDetails} />
+                    <ResumeUploader resumeFiles={resumeFiles} setResumeFiles={setResumeFiles} />
+                    {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+                    <button onClick={handleAnalyze} disabled={isLoading || resumeFiles.length === 0} className="w-full bg-primary hover:bg-secondary text-white font-bold py-3 px-4 rounded-lg transition duration-300 ease-in-out flex items-center justify-center disabled:bg-gray-400 disabled:cursor-not-allowed">
+                      {isLoading ? <Spinner /> : <AnalyzeIcon />}
+                      <span className="ml-2">{isLoading ? 'Analyzing...' : 'Analyze Resumes'}</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="lg:col-span-8">
+                  <ResultsDisplay results={analysisResults} isLoading={isLoading} />
+                </div>
+              </div>
+            </main>
+          </div>
+        );
+      };
+
+      // --- Renders the App ---
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+</body>
 </html>
