@@ -1,5 +1,5 @@
 {
   "name": "Skill Scan",
-  "description": "An AI-powered tool to instantly scan your resume against any job description, providing a relevance score and actionable feedback.",
+  "description": "An automated system to streamline resume evaluation. Upload multiple resumes and define a job description to get a ranked list of candidates based on skill and experience matching, all done locally in your browser.",
   "requestFramePermissions": []
 }
