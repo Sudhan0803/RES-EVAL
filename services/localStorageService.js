@@ -1,3 +1,4 @@
+
 import type { AnalysisHistoryItem, AnalysisResultData } from '../types.js';
 
 const HISTORY_KEY = 'skill-scan-history';

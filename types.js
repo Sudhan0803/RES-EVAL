@@ -1,3 +1,4 @@
+
 export enum FitVerdict {
   High = "High",
   Medium = "Medium",
