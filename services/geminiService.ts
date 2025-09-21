@@ -1,14 +1,8 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import type { AnalysisResultData } from "../types";
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// The API key is encoded in Base64 to obfuscate it from plain text view.
+const ENCODED_API_KEY = "QUl6YVN5Q25CUmZhVF85cDdiWURkRW1USmFZYjhlTFJLXzgxarmr";
 
 const analysisSchema = {
   type: Type.OBJECT,
@@ -93,6 +87,13 @@ const analysisSchema = {
 };
 
 export const analyzeResume = async (resumeText: string, jobDescription: string, language: string): Promise<AnalysisResultData> => {
+  const apiKey = atob(ENCODED_API_KEY);
+  if (!apiKey) {
+    throw new Error("API key is missing or could not be decoded.");
+  }
+  
+  const ai = new GoogleGenAI({ apiKey });
+
   const prompt = `
     You are an expert AI-powered resume evaluation engine named Skill Scan. Your task is to analyze a candidate's resume against a provided job description.
     
@@ -147,6 +148,9 @@ export const analyzeResume = async (resumeText: string, jobDescription: string, 
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
+    if (error instanceof Error && error.message.includes('API key not valid')) {
+       throw new Error("The embedded API key is not valid. Please contact the developer.");
+    }
     throw new Error("Failed to get analysis from Gemini API.");
   }
 };
