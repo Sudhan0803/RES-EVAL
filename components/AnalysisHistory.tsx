@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { AnalysisHistoryItem, SortOption } from '../types';
 import { FitVerdict } from '../types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
 
 // Inlined SVG Icons
 const HistoryIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -17,20 +19,21 @@ const TrashIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 
 const getVerdictClass = (verdict: FitVerdict) => {
   switch (verdict) {
-    case FitVerdict.High: return 'bg-green-100 text-green-800 border-green-200';
-    case FitVerdict.Medium: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    case FitVerdict.Low: return 'bg-red-100 text-red-800 border-red-200';
-    default: return 'bg-slate-100 text-slate-800 border-slate-200';
+    case FitVerdict.High: return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-500/20 dark:text-green-300';
+    case FitVerdict.Medium: return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-500/20 dark:text-yellow-300';
+    case FitVerdict.Low: return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-500/20 dark:text-red-300';
+    default: return 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-600 dark:text-slate-200';
   }
 };
 
 const getScoreColor = (score: number) => {
-  if (score >= 75) return 'text-green-600';
-  if (score >= 50) return 'text-yellow-600';
-  return 'text-red-600';
+  if (score >= 75) return 'text-green-600 dark:text-green-400';
+  if (score >= 50) return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-red-600 dark:text-red-400';
 };
 
 interface AnalysisHistoryProps {
+  theme: 'light' | 'dark';
   history: AnalysisHistoryItem[];
   onSelectItem: (id: string) => void;
   onClearHistory: () => void;
@@ -42,7 +45,20 @@ interface AnalysisHistoryProps {
   onClearFilters: () => void;
 }
 
+const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-md shadow-lg">
+        <p className="font-bold text-slate-800 dark:text-slate-100">{`Score Range: ${label}`}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{`Analyses: ${payload[0].value}`}</p>
+      </div>
+    );
+  }
+  return null;
+};
+
 export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({ 
+  theme,
   history, 
   onSelectItem, 
   onClearHistory, 
@@ -54,17 +70,48 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
   onClearFilters,
 }) => {
   const verdictOptions: FitVerdict[] = [FitVerdict.High, FitVerdict.Medium, FitVerdict.Low];
+  
+  const chartData = useMemo(() => {
+    const brackets = [
+      { name: '0-10', count: 0 }, { name: '11-20', count: 0 },
+      { name: '21-30', count: 0 }, { name: '31-40', count: 0 },
+      { name: '41-50', count: 0 }, { name: '51-60', count: 0 },
+      { name: '61-70', count: 0 }, { name: '71-80', count: 0 },
+      { name: '81-90', count:0 }, { name: '91-100', count: 0 }
+    ];
+
+    history.forEach(item => {
+      const score = item.result.relevanceScore;
+      if (score > 0) {
+        const index = Math.min(Math.floor((score - 1) / 10), 9);
+        brackets[index].count++;
+      } else if (score === 0) {
+         brackets[0].count++;
+      }
+    });
+    return brackets;
+  }, [history]);
+
+  const COLORS = [
+    '#ef4444', '#ef4444', '#ef4444', '#ef4444', '#ef4444', 
+    '#f59e0b', '#f59e0b', 
+    '#22c55e', '#22c55e', '#22c55e'
+  ];
+  
+  const tickColor = theme === 'dark' ? '#94a3b8' : '#64748b';
+  const gridColor = theme === 'dark' ? '#334155' : '#e2e8f0';
+
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between mb-4 gap-4">
         <div className="flex items-center">
-          <HistoryIcon className="w-7 h-7 mr-3 text-slate-500 flex-shrink-0" />
-          <h2 className="text-xl font-bold text-slate-800">Analysis History</h2>
+          <HistoryIcon className="w-7 h-7 mr-3 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Analysis History</h2>
         </div>
         <button
           onClick={onClearHistory}
-          className="flex items-center px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 transition-colors"
+          className="flex items-center px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20 transition-colors"
           aria-label="Clear all analysis history"
         >
           <TrashIcon className="w-4 h-4 mr-1.5" />
@@ -72,28 +119,47 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
         </button>
       </div>
 
-      <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+       <div className="mb-6">
+        <h3 className="text-md font-semibold text-slate-700 dark:text-slate-200 mb-2 text-center">Score Distribution</h3>
+        <div className="w-full h-52">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="name" tick={{ fill: tickColor, fontSize: 12 }} tickLine={{ stroke: tickColor }} />
+              <YAxis allowDecimals={false} tick={{ fill: tickColor, fontSize: 12 }} tickLine={{ stroke: tickColor }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: theme === 'dark' ? 'rgba(100, 116, 139, 0.2)' : 'rgba(203, 213, 225, 0.4)' }} />
+              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label htmlFor="sort-history" className="block text-sm font-medium text-slate-600 mb-1">Sort by</label>
+            <label htmlFor="sort-history" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Sort by</label>
             <select
               id="sort-history"
               value={sortOption}
               onChange={(e) => onSortChange(e.target.value as SortOption)}
-              className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-slate-900 dark:text-slate-50"
             >
               <option value="date-desc">Date (Newest First)</option>
               <option value="score-desc">Score (High to Low)</option>
               <option value="score-asc">Score (Low to High)</option>
-              <option value="name-asc">Resume Name (A-Z)</option>
+              <option value="name-asc">Candidate Name (A-Z)</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Filter by Verdict</label>
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Filter by Verdict</label>
             <div className="flex items-center space-x-2">
               <button 
                 onClick={onClearFilters}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${filterVerdicts.length === 0 ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'}`}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${filterVerdicts.length === 0 ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600'}`}
               >
                 All
               </button>
@@ -101,7 +167,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
                 <button
                   key={verdict}
                   onClick={() => onFilterChange(verdict)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${filterVerdicts.includes(verdict) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'}`}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${filterVerdicts.includes(verdict) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600'}`}
                 >
                   {verdict}
                 </button>
@@ -113,7 +179,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
 
       <div className="max-h-96 overflow-y-auto pr-2 -mr-2">
         {history.length === 0 ? (
-          <div className="text-center text-slate-500 py-8">
+          <div className="text-center text-slate-500 dark:text-slate-400 py-8">
             <p className="font-semibold">No Matching Analyses Found</p>
             <p className="text-sm mt-1">Try adjusting your sort or filter options, or clear the filters to see all results.</p>
           </div>
@@ -125,27 +191,27 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
                 <li key={item.id}>
                   <button
                     onClick={() => onSelectItem(item.id)}
-                    className={`w-full text-left p-4 rounded-lg border transition-all duration-200 ${isSelected ? 'bg-indigo-50 border-indigo-400 shadow-md scale-[1.02]' : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-slate-100'}`}
+                    className={`w-full text-left p-4 rounded-lg border transition-all duration-200 ${isSelected ? 'bg-indigo-50 border-indigo-400 shadow-md scale-[1.02] dark:bg-indigo-500/10 dark:border-indigo-500' : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-slate-100 dark:bg-slate-700/50 dark:border-slate-600 dark:hover:bg-slate-700'}`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
-                        <p className="text-xs text-slate-500 mb-1">{item.timestamp.toLocaleString()}</p>
-                        <p className="font-semibold text-slate-700 truncate" title={item.resumeFileName}>
-                          <span className="font-normal">Resume:</span> {item.resumeFileName}
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{item.timestamp.toLocaleString()}</p>
+                        <p className="font-semibold text-slate-700 dark:text-slate-200 truncate" title={item.candidateName}>
+                          {item.candidateName}
                         </p>
-                        <p className="text-sm text-slate-600 truncate" title={item.jdFileName}>
-                         <span className="font-normal">JD:</span> {item.jdFileName}
+                        <p className="text-sm text-slate-600 dark:text-slate-400 truncate" title={item.resumeFileName}>
+                         <span className="font-normal">File:</span> {item.resumeFileName}
                         </p>
                       </div>
                       <div className="flex items-center space-x-4 mt-3 sm:mt-0 sm:ml-4 flex-shrink-0">
                         <div className="text-center">
-                          <span className="text-xs text-slate-500">Score</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">Score</span>
                           <p className={`text-xl font-bold ${getScoreColor(item.result.relevanceScore)}`}>
                             {item.result.relevanceScore}
                           </p>
                         </div>
                         <div className="text-center">
-                          <span className="text-xs text-slate-500">Verdict</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">Verdict</span>
                           <p className={`px-2.5 py-0.5 text-sm font-semibold rounded-full ${getVerdictClass(item.result.fitVerdict)}`}>
                             {item.result.fitVerdict}
                           </p>

@@ -9,20 +9,34 @@ export interface MissingElement {
   details: string;
 }
 
+export interface JobTitleSuggestion {
+  original: string;
+  suggestion: string;
+}
+
+export interface AchievementImpact {
+  achievementText: string;
+  estimatedImpact: string;
+  justification: string;
+}
+
 export interface AnalysisResultData {
+  candidateName: string;
   relevanceScore: number;
   fitVerdict: FitVerdict;
   missingElements: MissingElement[];
   feedback: string;
+  jobTitleSuggestions: JobTitleSuggestion[];
+  achievementImpacts: AchievementImpact[];
 }
 
 export interface AnalysisHistoryItem {
   id: string;
   timestamp: Date;
+  candidateName: string;
   resumeFileName: string;
   jdFileName: string;
   result: AnalysisResultData;
-  resumeFileUrl?: string; // Link to the file in Firebase Storage
 }
 
 export type SortOption = 'date-desc' | 'score-desc' | 'score-asc' | 'name-asc';
