@@ -312,10 +312,8 @@
         const [selectedSkills, setSelectedSkills] = useState([]);
         const [customSkill, setCustomSkill] = useState('');
 
-        const PREDEFINED_CERTIFICATIONS = [ 'Google UX Design Professional Certificate', 'Machine Learning', 'Google Prompting Essentials', 'AI For Everyone', 'IBM Generative AI Engineering Professional Certificate', 'IBM Data Analyst Certificate', 'Responsive Web Design Certification', 'JavaScript Algorithms and Data Structures', 'Programming for Everybody (Getting Started with Python)', 'Associate Android Developer Certification', 'Google Career Certificates (Data Analytics, Project Management, Cybersecurity)', 'Foundations of Digital Marketing & E-commerce', 'Foundations of Cybersecurity', 'English for Career Development', 'Data Analysis with Python', 'Python for Data Science, AI & Development', 'Cybersecurity for Everyone', 'Build a Computer Vision App with Azure Cognitive Services', 'Harvard Business School (HBS Online) — Business Essentials Certificate', 'Harvard Business School — Business Analytics Certificate', 'Certified Financial Planner (CFP)', 'Certified Information Systems Security Professional (CISSP)', 'Certified Management Accountant (CMA)', 'Chartered Financial Analyst (CFA)', 'SANS Institute certification courses', 'Certificate in Cloud Computing', 'AWS Certified Solutions Architect', 'Certified ScrumMaster (CSM)', 'Project Management Professional (PMP)', 'Certified Associate in Project Management (CAPM)', 'CBAP (Certified Business Analysis Professional)', 'IIBA-AAC (Agile Analysis Certification)', 'CPIM (Certified in Production and Inventory Management)', 'CSCP (Certified Supply Chain Professional)', 'CLTD (Certified in Logistics, Transportation and Distribution)', 'Digital Strategy Certificate', 'Leadership & Management Certificate', 'Business Strategy Certificate', 'HBR (Harvard Business Review) online certificates', 'Micro-credentials in Artificial Intelligence', 'Data Science Professional Certificate', 'Big Data Engineering Certificate', 'SQL for Data Science Certificate', 'Tableau / Power BI Data Visualization Certification', 'Google Cloud Professional Architect / Data Engineer Certificates', 'Microsoft Azure Certifications', 'CompTIA Certifications (Security+, Network+, A+)', 'Cisco Certified Network Associate (CCNA)', 'Certified Ethical Hacker (CEH)', 'UX / UI Design Certifications', 'Graphic Design Certificates', 'Digital Marketing Certificates', 'SEO / SEM Certificates', 'Social Media Marketing Certificates', 'Content Marketing Certificates', 'Copywriting Certificates', 'Public Speaking / Communication Skills Certificates', 'Foreign Language Certifications', 'Teaching Certifications / TESOL / TEFL', 'Health & Safety / First Aid Certifications', 'Nutrition / Wellness Coaching Certificates', 'Personal Trainer Certificates', 'Mental Health / Counselling Certifications', 'Yoga & Mindfulness Instructor Certifications', 'Graphic Animation / Motion Graphics Certificates', 'Cybersecurity Incident Response Certificates', 'DevOps Certification', 'Blockchain Developer Certificates', 'Cryptocurrency / FinTech Specialist Certificates', 'SAP Certifications', 'Six Sigma Green Belt / Black Belt Certifications', 'Lean Management Certificates', 'ISO Standards Auditor Certificates', 'Environmental Sustainability / ESG Certificates', 'Project Risk Management Certificate', 'Artificial Neural Networks / Deep Learning Certificates', 'Internet of Things (IoT) Certificates', 'Robotics / Automation Certificates', 'Game Development Certificates', 'Mobile App Development Certificates', 'Full Stack Web Development Certificates', 'Front-end / Back-end Web Dev Certificates', 'Cyber Law / Data Privacy Certificates', 'Financial Technology (FinTech) Certificates', 'Insurance / Actuarial Science Certificates', 'Real Estate / Property Management Certificates', 'Hospitality Management Certificates', 'Event Management Certificates', 'Supply Chain Analytics Certificates', 'Business Analytics Certificates', 'UX Research Certificates', 'Behavioral Design Certificates', 'Product Management Certificates', 'Scrum / Agile Coaching Certificates', 'Risk & Compliance Certificates', 'Quality Assurance / Testing Certificates (Software QA)', 'Game Theory / Algorithmic Thinking Certificates', 'Scientific Research Methods Certificates', 'Public Policy / Governance Certificates', 'Intellectual Property Law / Patent Agent Certificates' ];
-        const [allCertifications, setAllCertifications] = useState(PREDEFINED_CERTIFICATIONS);
-        const [selectedCertifications, setSelectedCertifications] = useState([]);
-        const [customCertification, setCustomCertification] = useState('');
+        const [certificationInput, setCertificationInput] = useState('');
+        const [certifications, setCertifications] = useState([]);
 
         const PREDEFINED_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Mandarin'];
         const [allLanguages, setAllLanguages] = useState(PREDEFINED_LANGUAGES);
@@ -333,14 +331,14 @@
             if (selectedSkills.length > 0) {
                 sections.push("Required Skills: " + selectedSkills.join(', ') + '.');
             }
-            if (selectedCertifications.length > 0) {
-                sections.push("Preferred Certifications: " + selectedCertifications.join(', ') + '.');
+            if (certifications.length > 0) {
+                sections.push("Preferred Certifications: " + certifications.join(', ') + '.');
             }
             if (selectedLanguages.length > 0) {
                 sections.push("Languages: " + selectedLanguages.join(', ') + '.');
             }
             onJdChange(sections.join('\n\n'));
-        }, [experiences, educationLevel, educationField, selectedSkills, selectedCertifications, selectedLanguages, onJdChange]);
+        }, [experiences, educationLevel, educationField, selectedSkills, certifications, selectedLanguages, onJdChange]);
 
         const handleAddExperience = () => {
             if (experienceYears && experienceField) {
@@ -362,16 +360,13 @@
             }
         };
 
-        const handleToggleCertification = (cert) => {
-            setSelectedCertifications(prev => prev.includes(cert) ? prev.filter(c => c !== cert) : [...prev, cert]);
-        };
-        const handleAddCustomCertification = () => {
-            if (customCertification && !allCertifications.includes(customCertification)) {
-                setAllCertifications([...allCertifications, customCertification]);
-                setSelectedCertifications([...selectedCertifications, customCertification]);
-                setCustomCertification('');
+        const handleAddCertification = () => {
+            if (certificationInput && !certifications.includes(certificationInput)) {
+                setCertifications([...certifications, certificationInput]);
+                setCertificationInput('');
             }
         };
+        const handleRemoveCertification = (index) => setCertifications(certifications.filter((_, i) => i !== index));
 
         const handleToggleLanguage = (lang) => {
             setSelectedLanguages(prev => prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]);
@@ -391,7 +386,7 @@
                         <BriefcaseIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />
                         <h2>Job Description Builder</h2>
                     </div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Build a job description by selecting the required criteria below.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 -mt-6">Build a job description by selecting the required criteria below.</p>
                 </div>
 
                 <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -459,20 +454,17 @@
 
                 <div className="space-y-4">
                     <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><CertificationIcon className="w-5 h-5 mr-2" />Certifications</label>
-                     <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
-                        {allCertifications.map(cert => {
-                            const isSelected = selectedCertifications.includes(cert);
-                            return (
-                                <button key={cert} onClick={() => handleToggleCertification(cert)} className={`flex items-center text-sm px-3 py-1 rounded-full transition-colors ${isSelected ? 'bg-amber-600 text-white' : 'bg-white dark:bg-slate-700 hover:bg-amber-50 dark:hover:bg-slate-600'}`}>
-                                    {isSelected && <CheckIcon className="w-4 h-4 mr-1" />}
-                                    {cert}
-                                </button>
-                            );
-                        })}
+                     <div className="flex gap-2">
+                        <input type="text" value={certificationInput} onChange={e => setCertificationInput(e.target.value)} placeholder="e.g., AWS Certified Cloud Practitioner" className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={handleAddCertification} disabled={!certificationInput} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-slate-400">Add</button>
                     </div>
-                    <div className="flex gap-2">
-                        <input type="text" value={customCertification} onChange={e => setCustomCertification(e.target.value)} placeholder="Add a custom certification..." className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <button onClick={handleAddCustomCertification} disabled={!customCertification} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:bg-slate-400">Add</button>
+                    <div className="flex flex-wrap gap-2">
+                        {certifications.map((cert, i) => (
+                            <div key={i} className="flex items-center bg-white dark:bg-slate-800 text-sm p-2 rounded-md shadow-sm border border-slate-200 dark:border-slate-700">
+                                <span>{cert}</span>
+                                <button onClick={() => handleRemoveCertification(i)} className="ml-2 text-slate-400 hover:text-red-500"><XCircleIcon className="w-5 h-5" /></button>
+                            </div>
+                        ))}
                     </div>
                 </div>
                 
