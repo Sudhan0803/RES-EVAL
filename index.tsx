@@ -42,19 +42,49 @@
     //==================================================================
     // TYPES
     //==================================================================
-    var FitVerdict;
-    (function (FitVerdict) {
-        FitVerdict["High"] = "High";
-        FitVerdict["Medium"] = "Medium";
-        FitVerdict["Low"] = "Low";
-    })(FitVerdict || (FitVerdict = {}));
+    // FIX: Changed var to enum for proper TypeScript typing.
+    enum FitVerdict {
+        High = "High",
+        Medium = "Medium",
+        Low = "Low",
+    }
+
+    // FIX: Added interfaces for data structures for type safety.
+    interface MissingElement {
+        type: string;
+        details: string;
+    }
+
+    interface AnalysisResultData {
+        candidateName: string;
+        candidateEmail: string;
+        candidatePhone: string;
+        relevanceScore: number;
+        fitVerdict: FitVerdict;
+        missingElements: MissingElement[];
+        feedback: string;
+        jobTitleSuggestions?: string[];
+        achievementImpacts?: string[];
+    }
+
+    interface HistoryItem {
+        id: string;
+        timestamp: Date;
+        resumeFileName: string;
+        jdFileName: string;
+        result: AnalysisResultData;
+        candidateName: string;
+        candidateEmail: string;
+        candidatePhone: string;
+    }
 
     //==================================================================
     // PDF PARSING UTILITY
     //==================================================================
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://aistudiocdn.com/pdfjs-dist@^4.5.136/build/pdf.worker.min.mjs`;
 
-    const parseFileAsText = async (file) => {
+    // FIX: Added type annotations for function parameters and return value.
+    const parseFileAsText = async (file: File): Promise<string> => {
         if (file.type !== 'application/pdf') {
             throw new Error('Invalid file type. Only PDF files are supported.');
         }
@@ -80,25 +110,40 @@
     //==================================================================
     const HISTORY_KEY = 'skill-scan-history';
 
-    const getHistory = () => {
+    // FIX: Added return type and explicit types for map callback.
+    const getHistory = (): HistoryItem[] => {
         try {
             const historyJson = localStorage.getItem(HISTORY_KEY);
             if (!historyJson) return [];
             const history = JSON.parse(historyJson);
-            return history.map((item) => ({
-                ...item,
-                timestamp: new Date(item.timestamp),
-            }));
+            // FIX: Rewrote to avoid object spread which might be mis-parsed as JSX spread, and added explicit typing.
+            return history.map((item: any): HistoryItem => {
+                return Object.assign({}, item, { timestamp: new Date(item.timestamp) });
+            });
         } catch (error) {
             console.error("Failed to parse history from localStorage:", error);
             return [];
         }
     };
 
-    const addHistoryItem = (item) => {
+    // FIX: Added type for item parameter and constructed new object explicitly to avoid object spread errors.
+    interface NewHistoryData {
+        resumeFileName: string;
+        jdFileName: string;
+        result: AnalysisResultData;
+        candidateName: string;
+        candidateEmail: string;
+        candidatePhone: string;
+    }
+    const addHistoryItem = (item: NewHistoryData) => {
         const history = getHistory();
-        const newHistoryItem = {
-            ...item,
+        const newHistoryItem: HistoryItem = {
+            resumeFileName: item.resumeFileName,
+            jdFileName: item.jdFileName,
+            result: item.result,
+            candidateName: item.candidateName,
+            candidateEmail: item.candidateEmail,
+            candidatePhone: item.candidatePhone,
             id: `hist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
             timestamp: new Date(),
         };
@@ -115,7 +160,8 @@
     //==================================================================
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    const geminiAnalyzeResume = async (resumeText, jobDescription, analysisLanguage = 'english') => {
+    // FIX: Added explicit return type promise and type assertion for parsed JSON.
+    const geminiAnalyzeResume = async (resumeText: string, jobDescription: string, analysisLanguage = 'english'): Promise<AnalysisResultData> => {
         const model = 'gemini-2.5-flash';
 
         const schema = {
@@ -170,7 +216,8 @@
             });
 
             const jsonText = response.text.trim();
-            const result = JSON.parse(jsonText);
+            // FIX: Added type assertion for the parsed JSON object.
+            const result = JSON.parse(jsonText) as AnalysisResultData;
             
             // Validate fitVerdict
             const validVerdicts = [FitVerdict.High, FitVerdict.Medium, FitVerdict.Low];
@@ -194,31 +241,39 @@
     //==================================================================
     // ICONS
     //==================================================================
-    const SparklesIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.898 20.562L16.25 22.5l-.648-1.938a2.25 2.25 0 01-1.476-1.476L12 18.75l1.938-.648a2.25 2.25 0 011.476-1.476L17.25 15l.648 1.938a2.25 2.25 0 011.476 1.476L21 18.75l-1.938.648a2.25 2.25 0 01-1.476 1.476z" /> </svg> );
-    const DocumentIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> </svg> );
-    const BriefcaseIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /> </svg> );
-    const LanguagesIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" /> </svg> );
-    const ExperienceIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18M18.75 3v18M9 6.75h6.375M9 12h6.375M9 17.25h6.375" /> </svg> );
-    const EducationIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path d="M12 14l9-5-9-5-9 5 9 5z" /> <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-5.998 12.078 12.078 0 01.665-6.479L12 14z" /> <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-5.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222 4 2.222V20M1 12l5.354-3.031a.606.606 0 01.652 0L12 12l5.994-3.031a.606.606 0 01.652 0L23 12" /> </svg> );
-    const SkillsIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /> </svg> );
-    const CertificationIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> </svg> );
-    const CheckIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143z" clipRule="evenodd" /> </svg> );
-    const XCircleIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" /> </svg> );
-    const SearchIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg> );
+    // FIX: Added proper typing for icon component props.
+    const SparklesIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.898 20.562L16.25 22.5l-.648-1.938a2.25 2.25 0 01-1.476-1.476L12 18.75l1.938-.648a2.25 2.25 0 011.476-1.476L17.25 15l.648 1.938a2.25 2.25 0 011.476 1.476L21 18.75l-1.938.648a2.25 2.25 0 01-1.476 1.476z" /> </svg> );
+    const DocumentIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> </svg> );
+    const BriefcaseIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /> </svg> );
+    const LanguagesIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" /> </svg> );
+    const ExperienceIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18M18.75 3v18M9 6.75h6.375M9 12h6.375M9 17.25h6.375" /> </svg> );
+    const EducationIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path d="M12 14l9-5-9-5-9 5 9 5z" /> <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-5.998 12.078 12.078 0 01.665-6.479L12 14z" /> <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-5.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222 4 2.222V20M1 12l5.354-3.031a.606.606 0 01.652 0L12 12l5.994-3.031a.606.606 0 01.652 0L23 12" /> </svg> );
+    const SkillsIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /> </svg> );
+    const CertificationIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> </svg> );
+    const CheckIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143z" clipRule="evenodd" /> </svg> );
+    const XCircleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" /> </svg> );
+    const SearchIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg> );
 
     //==================================================================
     // SIMPLE COMPONENTS
     //==================================================================
-    const Button = ({ children, ...props }) => ( <button {...props} className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"> {children} </button> );
-    const Spinner = () => ( <svg className="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg> );
+    // FIX: Added proper typing for Button component props.
+    const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ children, ...props }) => ( <button {...props} className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"> {children} </button> );
+    const Spinner: React.FC = () => ( <svg className="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg> );
     
     //==================================================================
     // COMPLEX COMPONENTS (Defined in dependency order)
     //==================================================================
-    const Header = ({ theme, setTheme, onNavigate }) => {
+    // FIX: Added interface for Header props and used React.FC.
+    interface HeaderProps {
+        theme: string;
+        setTheme: (theme: string) => void;
+        onNavigate: (view: 'analyzer' | 'about') => void;
+    }
+    const Header: React.FC<HeaderProps> = ({ theme, setTheme, onNavigate }) => {
         const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
-        const SunIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /> </svg> );
-        const MoonIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /> </svg> );
+        const SunIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /> </svg> );
+        const MoonIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /> </svg> );
         return (
             <header className="bg-white dark:bg-slate-800 shadow-sm dark:border-b dark:border-slate-700 sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
@@ -240,12 +295,19 @@
         );
     };
 
-    const ResumeUpload = ({ onFileSelect, selectedFiles, isParsing }) => {
-        const fileInputRef = useRef(null);
+    // FIX: Added interface for ResumeUpload props and used React.FC.
+    interface ResumeUploadProps {
+        onFileSelect: (files: File[]) => void;
+        selectedFiles: File[];
+        isParsing: boolean;
+    }
+    const ResumeUpload: React.FC<ResumeUploadProps> = ({ onFileSelect, selectedFiles, isParsing }) => {
+        const fileInputRef = useRef<HTMLInputElement>(null);
         const [fileCount, setFileCount] = useState('1');
-        const [error, setError] = useState(null);
-        const UploadIcon = (props) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75M3 17.25V6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 19.5H5.25A2.25 2.25 0 013 17.25z" /></svg>);
-        const handleFileCountChange = (e) => {
+        const [error, setError] = useState<string | null>(null);
+        const UploadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75M3 17.25V6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 19.5H5.25A2.25 2.25 0 013 17.25z" /></svg>);
+        // FIX: Added event type for handler.
+        const handleFileCountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             const { value } = e.target;
             if (value === '' || parseInt(value, 10) > 0) {
                 setFileCount(value);
@@ -253,7 +315,8 @@
                 if (selectedFiles.length > 0) onFileSelect([]);
             }
         };
-        const processFiles = (files) => {
+        // FIX: Added type for files parameter.
+        const processFiles = (files: FileList | null) => {
             if (!files) return;
             const fileArray = Array.from(files);
             const expectedCount = parseInt(fileCount, 10);
@@ -277,11 +340,12 @@
                     <label htmlFor="num-resumes" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Number of Resumes</label>
                     <input type="number" id="num-resumes" value={fileCount} onChange={handleFileCountChange} min="1" className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"/>
                 </div>
-                <div onClick={() => fileInputRef.current?.click()} onDrop={(e) => { e.preventDefault(); processFiles(e.dataTransfer.files); }} onDragOver={(e) => e.preventDefault()} className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-md cursor-pointer hover:border-indigo-500">
+                {/* FIX: Added event types for drag-and-drop handlers. */}
+                <div onClick={() => fileInputRef.current?.click()} onDrop={(e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); processFiles(e.dataTransfer.files); }} onDragOver={(e: React.DragEvent<HTMLDivElement>) => e.preventDefault()} className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-md cursor-pointer hover:border-indigo-500">
                     <div className="space-y-1 text-center">
                         <UploadIcon className="mx-auto h-12 w-12 text-slate-400" />
                         <div className="flex text-sm text-slate-600 dark:text-slate-300">
-                            <span className="relative font-medium text-indigo-600 dark:text-indigo-400"><span>{selectedFiles.length > 0 ? 'Replace files' : `Upload ${fileCount || '...'} file(s)`}</span><input ref={fileInputRef} type="file" className="sr-only" accept=".pdf" onChange={(e) => processFiles(e.target.files)} multiple /></span>
+                            <span className="relative font-medium text-indigo-600 dark:text-indigo-400"><span>{selectedFiles.length > 0 ? 'Replace files' : `Upload ${fileCount || '...'} file(s)`}</span><input ref={fileInputRef} type="file" className="sr-only" accept=".pdf" onChange={(e: React.ChangeEvent<HTMLInputElement>) => processFiles(e.target.files)} multiple /></span>
                             <p className="pl-1">or drag and drop</p>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">PDF only</p>
@@ -301,24 +365,30 @@
         );
     };
 
-    const JobDescriptionBuilder = ({ onJdChange, analysisLanguage, onLanguageChange }) => {
+    // FIX: Added interface for JobDescriptionBuilder props and used React.FC.
+    interface JobDescriptionBuilderProps {
+        onJdChange: (jd: string) => void;
+        analysisLanguage: string;
+        onLanguageChange: (lang: string) => void;
+    }
+    const JobDescriptionBuilder: React.FC<JobDescriptionBuilderProps> = ({ onJdChange, analysisLanguage, onLanguageChange }) => {
         const [experienceYears, setExperienceYears] = useState('');
         const [experienceField, setExperienceField] = useState('');
-        const [experiences, setExperiences] = useState([]);
+        const [experiences, setExperiences] = useState<{ years: string; field: string }[]>([]);
         const [educationLevel, setEducationLevel] = useState('');
         const [educationField, setEducationField] = useState('');
         
         const PREDEFINED_SKILLS = ['React', 'TypeScript', 'JavaScript', 'Node.js', 'Python', 'SQL', 'CSS', 'HTML', 'Project Management', 'Agile', 'Scrum', 'Jira', 'Tableau', 'Power BI'];
         const [allSkills, setAllSkills] = useState(PREDEFINED_SKILLS);
-        const [selectedSkills, setSelectedSkills] = useState([]);
+        const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
         const [customSkill, setCustomSkill] = useState('');
 
         const [certificationInput, setCertificationInput] = useState('');
-        const [certifications, setCertifications] = useState([]);
+        const [certifications, setCertifications] = useState<string[]>([]);
 
         const PREDEFINED_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Mandarin'];
         const [allLanguages, setAllLanguages] = useState(PREDEFINED_LANGUAGES);
-        const [selectedLanguages, setSelectedLanguages] = useState([]);
+        const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
         const [customLanguage, setCustomLanguage] = useState('');
 
         useEffect(() => {
@@ -348,9 +418,9 @@
                 setExperienceField('');
             }
         };
-        const handleRemoveExperience = (index) => setExperiences(experiences.filter((_, i) => i !== index));
+        const handleRemoveExperience = (index: number) => setExperiences(experiences.filter((_, i) => i !== index));
 
-        const handleToggleSkill = (skill) => {
+        const handleToggleSkill = (skill: string) => {
             setSelectedSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
         };
         const handleAddCustomSkill = () => {
@@ -367,9 +437,9 @@
                 setCertificationInput('');
             }
         };
-        const handleRemoveCertification = (index) => setCertifications(certifications.filter((_, i) => i !== index));
+        const handleRemoveCertification = (index: number) => setCertifications(certifications.filter((_, i) => i !== index));
 
-        const handleToggleLanguage = (lang) => {
+        const handleToggleLanguage = (lang: string) => {
             setSelectedLanguages(prev => prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]);
         };
         const handleAddCustomLanguage = () => {
@@ -387,7 +457,7 @@
                         <BriefcaseIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />
                         <h2>Job Description Builder</h2>
                     </div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 -mt-6">Build a job description by selecting the required criteria below.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Build a job description by selecting the required criteria below.</p>
                 </div>
 
                 <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -492,11 +562,14 @@
         );
     };
 
-
-    const AnalysisResult = ({ data }) => {
-        const reportRef = useRef(null);
+    // FIX: Added interface for AnalysisResult props and used React.FC.
+    interface AnalysisResultProps {
+        data: AnalysisResultData;
+    }
+    const AnalysisResult: React.FC<AnalysisResultProps> = ({ data }) => {
+        const reportRef = useRef<HTMLDivElement>(null);
         const [isDownloading, setIsDownloading] = useState(false);
-        const getVerdictClass = (verdict) => {
+        const getVerdictClass = (verdict: FitVerdict) => {
             switch (verdict) {
                 case FitVerdict.High: return 'bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300';
                 case FitVerdict.Medium: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300';
@@ -504,12 +577,13 @@
                 default: return 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200';
             }
         };
-        const getScoreColor = (score) => {
+        const getScoreColor = (score: number) => {
             if (score >= 75) return 'text-green-600 dark:text-green-400';
             if (score >= 50) return 'text-yellow-600 dark:text-yellow-400';
             return 'text-red-600 dark:text-red-400';
         };
-        const ScoreGauge = ({ score }) => (
+        // FIX: Added type for score prop.
+        const ScoreGauge = ({ score }: { score: number }) => (
           <div className="relative w-32 h-32">
             <svg className="w-full h-full" viewBox="0 0 100 100">
               <circle className="text-slate-200 dark:text-slate-700" strokeWidth="10" stroke="currentColor" fill="transparent" r="45" cx="50" cy="50" />
@@ -521,19 +595,21 @@
         const handleDownloadPdf = async () => {
           setIsDownloading(true); 
           try { 
-            const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: document.documentElement.classList.contains('dark') ? '#1e293b' : '#ffffff' }); 
-            const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4', hotfixes: ['px_scaling'] }); 
-            const pdfWidth = pdf.internal.pageSize.getWidth(); 
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            const canvasWidth = canvas.width;
-            const canvasHeight = canvas.height;
-            const ratio = canvasHeight / canvasWidth;
-            let finalHeight = pdfWidth * ratio;
-            if (finalHeight > pdfHeight) {
-                finalHeight = pdfHeight;
+            if (reportRef.current) {
+                const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: document.documentElement.classList.contains('dark') ? '#1e293b' : '#ffffff' }); 
+                const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4', hotfixes: ['px_scaling'] }); 
+                const pdfWidth = pdf.internal.pageSize.getWidth(); 
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const canvasWidth = canvas.width;
+                const canvasHeight = canvas.height;
+                const ratio = canvasHeight / canvasWidth;
+                let finalHeight = pdfWidth * ratio;
+                if (finalHeight > pdfHeight) {
+                    finalHeight = pdfHeight;
+                }
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, finalHeight); 
+                pdf.save(`SkillScan_Analysis_${data.candidateName || 'Report'}.pdf`);
             }
-            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, finalHeight); 
-            pdf.save(`SkillScan_Analysis_${data.candidateName || 'Report'}.pdf`); 
           } catch(e) { 
             console.error(e); 
             alert("Failed to generate PDF.") 
@@ -559,9 +635,18 @@
         );
     };
     
-    const AnalysisHistory = ({ theme, history, onSelectItem, onClearHistory, selectedId }) => {
+    // FIX: Added interface for AnalysisHistory props and used React.FC.
+    interface AnalysisHistoryProps {
+        theme: string;
+        history: HistoryItem[];
+        onSelectItem: (id: string) => void;
+        onClearHistory: () => void;
+        selectedId: string | null;
+    }
+    const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({ theme, history, onSelectItem, onClearHistory, selectedId }) => {
         const [searchTerm, setSearchTerm] = useState('');
-        const CustomTooltip = ({ active, payload, label }) => { if (active && payload?.length) { return <div className="p-2 bg-white dark:bg-slate-800 border rounded-md shadow-lg"><p className="font-semibold">{`Score Range: ${label}`}</p><p>{`Analyses: ${payload[0].value}`}</p></div>; } return null; };
+        // FIX: Used `any` for recharts props as they are complex and not easily typed without library support.
+        const CustomTooltip = ({ active, payload, label }: any) => { if (active && payload?.length) { return <div className="p-2 bg-white dark:bg-slate-800 border rounded-md shadow-lg"><p className="font-semibold">{`Score Range: ${label}`}</p><p>{`Analyses: ${payload[0].value}`}</p></div>; } return null; };
         
         const chartData = useMemo(() => { const brackets = Array(10).fill(0).map((_, i) => ({ name: `${i*10+1}-${(i+1)*10}`, count: 0 })); history.forEach(item => { const score = item.result.relevanceScore; if (score > 0) { const index = Math.min(Math.floor((score - 1) / 10), 9); brackets[index].count++; } }); return brackets; }, [history]);
         
@@ -639,7 +724,7 @@
         );
     };
 
-    const AboutUs = () => {
+    const AboutUs: React.FC = () => {
         const teamMembers = [ { name: 'Nagasudhan T', linkedin: 'https://www.linkedin.com/in/naga-sudhan-36bb88339/' }, { name: 'Sankarapandian A' }, { name: 'Prajith S' }, ];
         return (
             <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-4xl mx-auto animate-fade-in">
@@ -662,20 +747,21 @@
     //==================================================================
     // MAIN APP COMPONENT
     //==================================================================
-    const App = () => {
-        const [currentView, setCurrentView] = useState('analyzer');
+    const App: React.FC = () => {
+        const [currentView, setCurrentView] = useState<'analyzer' | 'about'>('analyzer');
         const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
-        const [resumeFiles, setResumeFiles] = useState([]);
-        const [resumeTexts, setResumeTexts] = useState([]);
+        // FIX: Added explicit types for all state variables.
+        const [resumeFiles, setResumeFiles] = useState<File[]>([]);
+        const [resumeTexts, setResumeTexts] = useState<string[]>([]);
         const [jdText, setJdText] = useState('');
         const [analysisLanguage, setAnalysisLanguage] = useState('english');
         const [isLoading, setIsLoading] = useState(false);
         const [isParsingResumes, setIsParsingResumes] = useState(false);
-        const [error, setError] = useState(null);
-        const [analysisResults, setAnalysisResults] = useState(null);
-        const [viewedAnalysisResult, setViewedAnalysisResult] = useState(null);
-        const [history, setHistory] = useState([]);
-        const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+        const [error, setError] = useState<string | null>(null);
+        const [analysisResults, setAnalysisResults] = useState<{ resumeFileName: string, result: AnalysisResultData }[] | null>(null);
+        const [viewedAnalysisResult, setViewedAnalysisResult] = useState<AnalysisResultData | null>(null);
+        const [history, setHistory] = useState<HistoryItem[]>([]);
+        const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
         useEffect(() => {
             if (theme === 'dark') {
@@ -691,21 +777,21 @@
             setHistory(getHistory());
         }, []);
 
-        const handleNavigate = (view) => {
+        const handleNavigate = (view: 'analyzer' | 'about') => {
             setCurrentView(view);
             setAnalysisResults(null);
             setViewedAnalysisResult(null);
             setSelectedHistoryId(null);
         };
 
-        const handleResumeSelect = async (files) => {
+        const handleResumeSelect = async (files: File[]) => {
             setResumeFiles(files);
             setIsParsingResumes(true);
             setError(null);
             try {
                 const texts = await Promise.all(files.map(parseFileAsText));
                 setResumeTexts(texts);
-            } catch (err) {
+            } catch (err: any) {
                 setError(err.message);
                 setResumeFiles([]);
                 setResumeTexts([]);
@@ -754,7 +840,7 @@
             }
         };
 
-        const handleSelectHistoryItem = (id) => {
+        const handleSelectHistoryItem = (id: string) => {
             const item = history.find(h => h.id === id);
             if (item) {
                 setSelectedHistoryId(id);
