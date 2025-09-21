@@ -129,6 +129,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
+                        {/* FIX: Convert Date object to string for rendering */}
                         <p className="text-xs text-slate-500 mb-1">{item.timestamp.toLocaleString()}</p>
                         <p className="font-semibold text-slate-700 truncate" title={item.resumeFileName}>
                           <span className="font-normal">Resume:</span> {item.resumeFileName}

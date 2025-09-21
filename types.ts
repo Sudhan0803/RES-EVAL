@@ -1,7 +1,7 @@
 export enum FitVerdict {
-  High = 'High',
-  Medium = 'Medium',
-  Low = 'Low',
+  High = "High",
+  Medium = "Medium",
+  Low = "Low",
 }
 
 export interface MissingElement {
@@ -18,8 +18,11 @@ export interface AnalysisResultData {
 
 export interface AnalysisHistoryItem {
   id: string;
-  jdFileName: string;
+  timestamp: Date;
   resumeFileName: string;
+  jdFileName: string;
   result: AnalysisResultData;
-  timestamp: string;
+  resumeFileUrl?: string; // Link to the file in Firebase Storage
 }
+
+export type SortOption = 'date-desc' | 'score-desc' | 'score-asc' | 'name-asc';

@@ -1,26 +1,26 @@
-
 import React from 'react';
+import { SparklesIcon } from './icons/SparklesIcon';
 
-export const Header: React.FC = () => {
+interface HeaderProps {}
+
+const Header: React.FC<HeaderProps> = () => {
   return (
-    <header className="bg-white shadow-sm border-b border-slate-200">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex items-center space-x-3">
-            <div className="bg-slate-800 p-2 rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-bold text-slate-800">
-              Automated Resume Relevance Checker
+    <header className="bg-white shadow-sm">
+      <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <SparklesIcon className="h-8 w-8 text-indigo-600 mr-3" />
+            <h1 className="text-3xl font-bold leading-tight text-slate-900">
+              Skill Scan
             </h1>
           </div>
-          <p className="text-sm font-medium text-slate-500">
-            Powered by Gemini
-          </p>
         </div>
+         <p className="text-center text-slate-500 mt-2">
+          Instantly scan your resume against any job description.
+        </p>
       </div>
     </header>
   );
 };
+
+export default Header;

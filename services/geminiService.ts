@@ -50,7 +50,7 @@ const analysisSchema = {
 
 export const analyzeResume = async (resumeText: string, jobDescription: string): Promise<AnalysisResultData> => {
   const prompt = `
-    You are an expert AI-powered resume evaluation engine for Innomatics Research Labs. Your task is to analyze a candidate's resume against a provided job description.
+    You are an expert AI-powered resume evaluation engine named Skill Scan. Your task is to analyze a candidate's resume against a provided job description.
     
     Job Description:
     ---
