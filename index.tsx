@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skill Scan</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://aistudiocdn.com/react@^19.1.1",
+      "react-dom/client": "https://aistudiocdn.com/react-dom@^19.1.1/client",
+      "recharts": "https://aistudiocdn.com/recharts@^2.12.7",
+      "pdfjs-dist/build/pdf.min.mjs": "https://aistudiocdn.com/pdfjs-dist@^4.5.136/build/pdf.min.mjs",
+      "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
+      "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1",
+      "@google/genai": "https://esm.run/@google/genai"
+    }
+  }
+  </script>
+  <!-- Add Babel for in-browser JSX/TSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root"></div>
+  
+  <script type="text/babel" data-presets="typescript,react" data-type="module">
+    // All application code is now inside this single script tag.
+    
+    import React, { useState, useEffect, useMemo, useRef } from 'react';
+    import ReactDOM from 'react-dom/client';
+    import * as pdfjsLib from 'pdfjs-dist/build/pdf.min.mjs';
+    import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+    import jsPDF from 'jspdf';
+    import html2canvas from 'html2canvas';
+    import { GoogleGenAI, Type } from '@google/genai';
+
+    //==================================================================
+    // TYPES
+    //==================================================================
+    var FitVerdict;
+    (function (FitVerdict) {
+        FitVerdict["High"] = "High";
+        FitVerdict["Medium"] = "Medium";
+        FitVerdict["Low"] = "Low";
+    })(FitVerdict || (FitVerdict = {}));
+
+    //==================================================================
+    // PDF PARSING UTILITY
+    //==================================================================
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://aistudiocdn.com/pdfjs-dist@^4.5.136/build/pdf.worker.min.mjs`;
+
+    const parseFileAsText = async (file) => {
+        if (file.type !== 'application/pdf') {
+            throw new Error('Invalid file type. Only PDF files are supported.');
+        }
+        const arrayBuffer = await file.arrayBuffer();
+        try {
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => ('str' in item ? item.str : '')).join(' ');
+                fullText += pageText + '\n\n';
+            }
+            return fullText;
+        } catch (error) {
+            console.error('Error parsing PDF:', error);
+            throw new Error('Failed to parse the PDF file. It might be corrupted or password-protected.');
+        }
+    };
+    
+    //==================================================================
+    // LOCAL STORAGE SERVICE
+    //==================================================================
+    const HISTORY_KEY = 'skill-scan-history';
+
+    const getHistory = () => {
+        try {
+            const historyJson = localStorage.getItem(HISTORY_KEY);
+            if (!historyJson) return [];
+            const history = JSON.parse(historyJson);
+            return history.map((item) => ({
+                ...item,
+                timestamp: new Date(item.timestamp),
+            }));
+        } catch (error) {
+            console.error("Failed to parse history from localStorage:", error);
+            return [];
+        }
+    };
+
+    const addHistoryItem = (item) => {
+        const history = getHistory();
+        const newHistoryItem = {
+            ...item,
+            id: `hist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            timestamp: new Date(),
+        };
+        const updatedHistory = [newHistoryItem, ...history];
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+    };
+
+    const clearHistory = () => {
+        localStorage.removeItem(HISTORY_KEY);
+    };
+    
+    //==================================================================
+    // AI ANALYSIS SERVICE (GEMINI)
+    //==================================================================
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const geminiAnalyzeResume = async (resumeText, jobDescription, analysisLanguage = 'english') => {
+        const model = 'gemini-2.5-flash';
+
+        const schema = {
+            type: Type.OBJECT,
+            properties: {
+                candidateName: { type: Type.STRING, description: "The full name of the candidate found in the resume. If not found, use 'N/A'." },
+                candidateEmail: { type: Type.STRING, description: "The primary email address of the candidate. If not found, return an empty string." },
+                candidatePhone: { type: Type.STRING, description: "The primary phone number of the candidate. If not found, return an empty string." },
+                relevanceScore: { type: Type.INTEGER, description: "A score from 0 to 100 indicating how well the resume matches the job description." },
+                fitVerdict: { type: Type.STRING, description: "A verdict of 'High', 'Medium', or 'Low' fit." },
+                missingElements: {
+                    type: Type.ARRAY,
+                    description: "A list of the top 5-10 most important skills or qualifications from the job description that are missing from the resume.",
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            type: { type: Type.STRING, description: "The type of missing element (e.g., 'Skill', 'Experience')." },
+                            details: { type: Type.STRING, description: "Details about the missing element (e.g., 'React', '5+ years of project management')." },
+                        },
+                        required: ["type", "details"]
+                    }
+                },
+                feedback: { type: Type.STRING, description: `Constructive feedback for the candidate on how to improve their resume for this specific job. This feedback must be written in ${analysisLanguage}.` },
+            },
+            required: ["candidateName", "candidateEmail", "candidatePhone", "relevanceScore", "fitVerdict", "missingElements", "feedback"]
+        };
+
+        const prompt = `Analyze the following resume against the provided job description.
+        
+        **Job Description:**
+        ---
+        ${jobDescription}
+        ---
+
+        **Resume Text:**
+        ---
+        ${resumeText}
+        ---
+
+        Based on the analysis, provide a JSON object with the candidate's details, a relevance score, a fit verdict, key missing elements, and actionable feedback. The feedback must be in ${analysisLanguage}. Extract the candidate's name, email, and phone number from the resume.
+        `;
+
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: schema,
+                    temperature: 0.2,
+                },
+            });
+
+            const jsonText = response.text.trim();
+            const result = JSON.parse(jsonText);
+            
+            // Validate fitVerdict
+            const validVerdicts = [FitVerdict.High, FitVerdict.Medium, FitVerdict.Low];
+            if (!validVerdicts.includes(result.fitVerdict)) {
+                result.fitVerdict = FitVerdict.Low;
+            }
+            if (!Array.isArray(result.missingElements)) {
+                result.missingElements = [];
+            }
+            
+            result.jobTitleSuggestions = [];
+            result.achievementImpacts = [];
+
+            return result;
+        } catch (error) {
+            console.error("Error calling Gemini API:", error);
+            throw new Error("Failed to get analysis from the AI. The model may be overloaded or the input is invalid.");
+        }
+    };
+
+    //==================================================================
+    // ICONS
+    //==================================================================
+    const SparklesIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.898 20.562L16.25 22.5l-.648-1.938a2.25 2.25 0 01-1.476-1.476L12 18.75l1.938-.648a2.25 2.25 0 011.476-1.476L17.25 15l.648 1.938a2.25 2.25 0 011.476 1.476L21 18.75l-1.938.648a2.25 2.25 0 01-1.476 1.476z" /> </svg> );
+    const DocumentIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> </svg> );
+    const BriefcaseIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /> </svg> );
+    const LanguagesIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" /> </svg> );
+    const ExperienceIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18M18.75 3v18M9 6.75h6.375M9 12h6.375M9 17.25h6.375" /> </svg> );
+    const EducationIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path d="M12 14l9-5-9-5-9 5 9 5z" /> <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-5.998 12.078 12.078 0 01.665-6.479L12 14z" /> <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-5.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222 4 2.222V20M1 12l5.354-3.031a.606.606 0 01.652 0L12 12l5.994-3.031a.606.606 0 01.652 0L23 12" /> </svg> );
+    const SkillsIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /> </svg> );
+    const CertificationIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> </svg> );
+    const CheckIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143z" clipRule="evenodd" /> </svg> );
+    const XCircleIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" /> </svg> );
+    const SearchIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg> );
+
+    //==================================================================
+    // SIMPLE COMPONENTS
+    //==================================================================
+    const Button = ({ children, ...props }) => ( <button {...props} className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"> {children} </button> );
+    const Spinner = () => ( <svg className="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg> );
+    
+    //==================================================================
+    // COMPLEX COMPONENTS (Defined in dependency order)
+    //==================================================================
+    const Header = ({ theme, setTheme, onNavigate }) => {
+        const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
+        const SunIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /> </svg> );
+        const MoonIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /> </svg> );
+        return (
+            <header className="bg-white dark:bg-slate-800 shadow-sm dark:border-b dark:border-slate-700 sticky top-0 z-10">
+                <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+                    <div className="flex items-center justify-between">
+                        <button onClick={() => onNavigate('analyzer')} className="flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 rounded-lg p-1 -ml-1">
+                            <SparklesIcon className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-3" />
+                            <h1 className="text-3xl font-bold leading-tight text-slate-900 dark:text-slate-50">Skill Scan</h1>
+                        </button>
+                        <div className="flex items-center gap-4">
+                            <button onClick={() => onNavigate('about')} className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">About Us</button>
+                            <button onClick={toggleTheme} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+                                {theme === 'light' ? <MoonIcon className="w-6 h-6" /> : <SunIcon className="w-6 h-6" />}
+                            </button>
+                        </div>
+                    </div>
+                    <p className="text-center text-slate-500 dark:text-slate-400 mt-2">Instantly scan your resume against any job description.</p>
+                </div>
+            </header>
+        );
+    };
+
+    const ResumeUpload = ({ onFileSelect, selectedFiles, isParsing }) => {
+        const fileInputRef = useRef(null);
+        const [fileCount, setFileCount] = useState('1');
+        const [error, setError] = useState(null);
+        const UploadIcon = (props) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75M3 17.25V6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 19.5H5.25A2.25 2.25 0 013 17.25z" /></svg>);
+        const handleFileCountChange = (e) => {
+            const { value } = e.target;
+            if (value === '' || parseInt(value, 10) > 0) {
+                setFileCount(value);
+                setError(null);
+                if (selectedFiles.length > 0) onFileSelect([]);
+            }
+        };
+        const processFiles = (files) => {
+            if (!files) return;
+            const fileArray = Array.from(files);
+            const expectedCount = parseInt(fileCount, 10);
+            if (isNaN(expectedCount) || expectedCount <= 0) {
+                setError('Please enter a valid number of files (1 or more).');
+                return;
+            }
+            if (fileArray.length !== expectedCount) {
+                setError(`Please select exactly ${expectedCount} file(s). You selected ${fileArray.length}.`);
+                if (selectedFiles.length > 0) onFileSelect([]);
+                return;
+            }
+            setError(null);
+            onFileSelect(fileArray);
+        };
+        return (
+            <div>
+                <label className="flex items-center text-lg font-semibold text-slate-700 dark:text-slate-200"><DocumentIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />Upload Resume(s)</label>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">Specify how many resumes you want to analyze, then upload the files.</p>
+                <div className="mb-4">
+                    <label htmlFor="num-resumes" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Number of Resumes</label>
+                    <input type="number" id="num-resumes" value={fileCount} onChange={handleFileCountChange} min="1" className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"/>
+                </div>
+                <div onClick={() => fileInputRef.current?.click()} onDrop={(e) => { e.preventDefault(); processFiles(e.dataTransfer.files); }} onDragOver={(e) => e.preventDefault()} className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-md cursor-pointer hover:border-indigo-500">
+                    <div className="space-y-1 text-center">
+                        <UploadIcon className="mx-auto h-12 w-12 text-slate-400" />
+                        <div className="flex text-sm text-slate-600 dark:text-slate-300">
+                            <span className="relative font-medium text-indigo-600 dark:text-indigo-400"><span>{selectedFiles.length > 0 ? 'Replace files' : `Upload ${fileCount || '...'} file(s)`}</span><input ref={fileInputRef} type="file" className="sr-only" accept=".pdf" onChange={(e) => processFiles(e.target.files)} multiple /></span>
+                            <p className="pl-1">or drag and drop</p>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">PDF only</p>
+                    </div>
+                </div>
+                {error && <div className="mt-3 text-sm text-red-600 bg-red-50 p-3 rounded-md border border-red-200 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+                {isParsing && <div className="mt-4 text-sm flex items-center"><Spinner /> Parsing PDFs...</div>}
+                {selectedFiles.length > 0 && !isParsing && (
+                    <div className="mt-4 space-y-2">
+                        <p className="text-sm font-medium">{selectedFiles.length} file(s) ready for analysis:</p>
+                        <ul className="max-h-32 overflow-y-auto space-y-1 bg-green-50 text-green-800 p-3 rounded-md border border-green-200 dark:bg-green-900/20 dark:text-green-300">
+                            {selectedFiles.map(file => (<li key={file.name} className="flex items-center text-sm"><DocumentIcon className="w-4 h-4 mr-2" />{file.name}</li>))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const JobDescriptionBuilder = ({ onJdChange, analysisLanguage, onLanguageChange }) => {
+        const [experienceYears, setExperienceYears] = useState('');
+        const [experienceField, setExperienceField] = useState('');
+        const [experiences, setExperiences] = useState([]);
+        const [educationLevel, setEducationLevel] = useState('');
+        const [educationField, setEducationField] = useState('');
+        
+        const PREDEFINED_SKILLS = ['React', 'TypeScript', 'JavaScript', 'Node.js', 'Python', 'SQL', 'CSS', 'HTML', 'Project Management', 'Agile', 'Scrum', 'Jira', 'Tableau', 'Power BI'];
+        const [allSkills, setAllSkills] = useState(PREDEFINED_SKILLS);
+        const [selectedSkills, setSelectedSkills] = useState([]);
+        const [customSkill, setCustomSkill] = useState('');
+
+        const [certificationInput, setCertificationInput] = useState('');
+        const [certifications, setCertifications] = useState([]);
+
+        const PREDEFINED_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Mandarin'];
+        const [allLanguages, setAllLanguages] = useState(PREDEFINED_LANGUAGES);
+        const [selectedLanguages, setSelectedLanguages] = useState([]);
+        const [customLanguage, setCustomLanguage] = useState('');
+
+        useEffect(() => {
+            const sections = [];
+            if (experiences.length > 0) {
+                sections.push("Required Experience:\n" + experiences.map(exp => `- ${exp.years} years in ${exp.field}`).join('\n'));
+            }
+            if (educationLevel) {
+                sections.push(`Education Level: ${educationLevel}${educationField ? ` in ${educationField}` : ''}.`);
+            }
+            if (selectedSkills.length > 0) {
+                sections.push("Required Skills: " + selectedSkills.join(', ') + '.');
+            }
+            if (certifications.length > 0) {
+                sections.push("Preferred Certifications: " + certifications.join(', ') + '.');
+            }
+            if (selectedLanguages.length > 0) {
+                sections.push("Languages: " + selectedLanguages.join(', ') + '.');
+            }
+            onJdChange(sections.join('\n\n'));
+        }, [experiences, educationLevel, educationField, selectedSkills, certifications, selectedLanguages, onJdChange]);
+
+        const handleAddExperience = () => {
+            if (experienceYears && experienceField) {
+                setExperiences([...experiences, { years: experienceYears, field: experienceField }]);
+                setExperienceYears('');
+                setExperienceField('');
+            }
+        };
+        const handleRemoveExperience = (index) => setExperiences(experiences.filter((_, i) => i !== index));
+
+        const handleToggleSkill = (skill) => {
+            setSelectedSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
+        };
+        const handleAddCustomSkill = () => {
+            if (customSkill && !allSkills.includes(customSkill)) {
+                setAllSkills([...allSkills, customSkill]);
+                setSelectedSkills([...selectedSkills, customSkill]);
+                setCustomSkill('');
+            }
+        };
+
+        const handleAddCertification = () => {
+            if (certificationInput && !certifications.includes(certificationInput)) {
+                setCertifications([...certifications, certificationInput]);
+                setCertificationInput('');
+            }
+        };
+        const handleRemoveCertification = (index) => setCertifications(certifications.filter((_, i) => i !== index));
+
+        const handleToggleLanguage = (lang) => {
+            setSelectedLanguages(prev => prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]);
+        };
+        const handleAddCustomLanguage = () => {
+            if (customLanguage && !allLanguages.includes(customLanguage)) {
+                setAllLanguages([...allLanguages, customLanguage]);
+                setSelectedLanguages([...selectedLanguages, customLanguage]);
+                setCustomLanguage('');
+            }
+        };
+
+        return (
+            <div className="space-y-8">
+                <div>
+                    <div className="flex items-center text-lg font-semibold text-slate-700 dark:text-slate-200">
+                        <BriefcaseIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />
+                        <h2>Job Description Builder</h2>
+                    </div>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 -mt-6">Build a job description by selecting the required criteria below.</p>
+                </div>
+
+                <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><LanguagesIcon className="w-5 h-5 mr-2" />Analysis Language</label>
+                    <select value={analysisLanguage} onChange={e => onLanguageChange(e.target.value)} className="w-full text-sm p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="english">English</option>
+                        <option value="spanish">Spanish</option>
+                        <option value="french">French</option>
+                        <option value="german">German</option>
+                        <option value="mandarin">Mandarin</option>
+                    </select>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">The AI feedback will be provided in the selected language.</p>
+                </div>
+
+                <div className="space-y-4">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><ExperienceIcon className="w-5 h-5 mr-2" />Experience</label>
+                    <div className="grid sm:grid-cols-3 gap-2">
+                        <input type="number" value={experienceYears} onChange={e => setExperienceYears(e.target.value)} placeholder="e.g., 5" className="sm:col-span-1 text-sm w-full p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <input type="text" value={experienceField} onChange={e => setExperienceField(e.target.value)} placeholder="e.g., Software Development" className="sm:col-span-2 w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                    <button onClick={handleAddExperience} disabled={!experienceYears || !experienceField} className="w-full text-sm px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-slate-400">Add Experience</button>
+                    <div className="flex flex-wrap gap-2">
+                        {experiences.map((exp, i) => (
+                            <div key={i} className="flex items-center bg-white dark:bg-slate-800 text-sm p-2 rounded-md shadow-sm border border-slate-200 dark:border-slate-700">
+                                <span>{exp.years} years in {exp.field}</span>
+                                <button onClick={() => handleRemoveExperience(i)} className="ml-2 text-slate-400 hover:text-red-500"><XCircleIcon className="w-5 h-5" /></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><EducationIcon className="w-5 h-5 mr-2" />Education</label>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                         <select value={educationLevel} onChange={e => setEducationLevel(e.target.value)} className="w-full text-sm p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                             <option value="">Select level...</option>
+                             <option value="High School Diploma">High School Diploma</option>
+                             <option value="Associate's Degree">Associate's Degree</option>
+                             <option value="Bachelor's Degree">Bachelor's Degree</option>
+                             <option value="Master's Degree">Master's Degree</option>
+                             <option value="PhD">PhD</option>
+                         </select>
+                         <input type="text" value={educationField} onChange={e => setEducationField(e.target.value)} placeholder="e.g., Computer Science" className="w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><SkillsIcon className="w-5 h-5 mr-2" />Skills</label>
+                    <div className="flex flex-wrap gap-2">
+                        {allSkills.map(skill => {
+                            const isSelected = selectedSkills.includes(skill);
+                            return (
+                                <button key={skill} onClick={() => handleToggleSkill(skill)} className={`flex items-center text-sm px-3 py-1 rounded-full transition-colors ${isSelected ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-slate-600'}`}>
+                                    {isSelected && <CheckIcon className="w-4 h-4 mr-1" />}
+                                    {skill}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex gap-2">
+                        <input type="text" value={customSkill} onChange={e => setCustomSkill(e.target.value)} placeholder="Add a custom skill..." className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={handleAddCustomSkill} disabled={!customSkill} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-slate-400">Add</button>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><CertificationIcon className="w-5 h-5 mr-2" />Certifications</label>
+                     <div className="flex gap-2">
+                        <input type="text" value={certificationInput} onChange={e => setCertificationInput(e.target.value)} placeholder="e.g., AWS Certified Cloud Practitioner" className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={handleAddCertification} disabled={!certificationInput} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-slate-400">Add</button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {certifications.map((cert, i) => (
+                            <div key={i} className="flex items-center bg-white dark:bg-slate-800 text-sm p-2 rounded-md shadow-sm border border-slate-200 dark:border-slate-700">
+                                <span>{cert}</span>
+                                <button onClick={() => handleRemoveCertification(i)} className="ml-2 text-slate-400 hover:text-red-500"><XCircleIcon className="w-5 h-5" /></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                
+                <div className="space-y-4">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><LanguagesIcon className="w-5 h-5 mr-2" />Languages</label>
+                    <div className="flex flex-wrap gap-2">
+                        {allLanguages.map(lang => {
+                            const isSelected = selectedLanguages.includes(lang);
+                            return (
+                                <button key={lang} onClick={() => handleToggleLanguage(lang)} className={`flex items-center text-sm px-3 py-1 rounded-full transition-colors ${isSelected ? 'bg-teal-600 text-white' : 'bg-white dark:bg-slate-700 hover:bg-teal-50 dark:hover:bg-slate-600'}`}>
+                                    {isSelected && <CheckIcon className="w-4 h-4 mr-1" />}
+                                    {lang}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex gap-2">
+                        <input type="text" value={customLanguage} onChange={e => setCustomLanguage(e.target.value)} placeholder="Add a custom language..." className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={handleAddCustomLanguage} disabled={!customLanguage} className="px-4 py-2 text-sm bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:bg-slate-400">Add</button>
+                    </div>
+                </div>
+
+            </div>
+        );
+    };
+
+
+    const AnalysisResult = ({ data }) => {
+        const reportRef = useRef(null);
+        const [isDownloading, setIsDownloading] = useState(false);
+        const getVerdictClass = (verdict) => {
+            switch (verdict) {
+                case FitVerdict.High: return 'bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300';
+                case FitVerdict.Medium: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300';
+                case FitVerdict.Low: return 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300';
+                default: return 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200';
+            }
+        };
+        const getScoreColor = (score) => {
+            if (score >= 75) return 'text-green-600 dark:text-green-400';
+            if (score >= 50) return 'text-yellow-600 dark:text-yellow-400';
+            return 'text-red-600 dark:text-red-400';
+        };
+        const ScoreGauge = ({ score }) => (
+          <div className="relative w-32 h-32">
+            <svg className="w-full h-full" viewBox="0 0 100 100">
+              <circle className="text-slate-200 dark:text-slate-700" strokeWidth="10" stroke="currentColor" fill="transparent" r="45" cx="50" cy="50" />
+              <circle strokeWidth="10" strokeDasharray={2 * Math.PI * 45} strokeDashoffset={(2 * Math.PI * 45) - (score / 100) * (2 * Math.PI * 45)} strokeLinecap="round" stroke={score >= 75 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444'} fill="transparent" r="45" cx="50" cy="50" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }} />
+            </svg>
+            <div className={`absolute inset-0 flex items-center justify-center text-3xl font-bold ${getScoreColor(score)}`}>{score}</div>
+          </div>
+        );
+        const handleDownloadPdf = async () => {
+          setIsDownloading(true); 
+          try { 
+            const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: document.documentElement.classList.contains('dark') ? '#1e293b' : '#ffffff' }); 
+            const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4', hotfixes: ['px_scaling'] }); 
+            const pdfWidth = pdf.internal.pageSize.getWidth(); 
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const ratio = canvasHeight / canvasWidth;
+            let finalHeight = pdfWidth * ratio;
+            if (finalHeight > pdfHeight) {
+                finalHeight = pdfHeight;
+            }
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, finalHeight); 
+            pdf.save(`SkillScan_Analysis_${data.candidateName || 'Report'}.pdf`); 
+          } catch(e) { 
+            console.error(e); 
+            alert("Failed to generate PDF.") 
+          } finally { 
+            setIsDownloading(false); 
+          } 
+        };
+        return (
+            <div className="w-full animate-fade-in">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Analysis for {data.candidateName || "Candidate"}</h2>
+                    <button onClick={handleDownloadPdf} disabled={isDownloading} className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-slate-400">{isDownloading ? 'Downloading...' : 'Download PDF'}</button>
+                </div>
+                <div ref={reportRef} className="p-4 bg-white dark:bg-slate-800 space-y-6">
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-6 p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
+                        <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Relevance Score</span><ScoreGauge score={data.relevanceScore} /></div>
+                        <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Fit Verdict</span><span className={`px-4 py-1.5 text-lg font-semibold rounded-full ${getVerdictClass(data.fitVerdict)}`}>{data.fitVerdict}</span></div>
+                    </div>
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Missing Skills</h3>{data.missingElements.length > 0 ? <p className="text-slate-600 dark:text-slate-300">{data.missingElements.map(item => item.details).join(', ')}</p> : <p>No significant skill gaps found in the resume.</p>}</div>
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Actionable Feedback</h3><p>{data.feedback}</p></div>
+                </div>
+            </div>
+        );
+    };
+    
+    const AnalysisHistory = ({ theme, history, onSelectItem, onClearHistory, selectedId }) => {
+        const [searchTerm, setSearchTerm] = useState('');
+        const CustomTooltip = ({ active, payload, label }) => { if (active && payload?.length) { return <div className="p-2 bg-white dark:bg-slate-800 border rounded-md shadow-lg"><p className="font-semibold">{`Score Range: ${label}`}</p><p>{`Analyses: ${payload[0].value}`}</p></div>; } return null; };
+        
+        const chartData = useMemo(() => { const brackets = Array(10).fill(0).map((_, i) => ({ name: `${i*10+1}-${(i+1)*10}`, count: 0 })); history.forEach(item => { const score = item.result.relevanceScore; if (score > 0) { const index = Math.min(Math.floor((score - 1) / 10), 9); brackets[index].count++; } }); return brackets; }, [history]);
+        
+        const filteredHistory = useMemo(() => {
+            if (!searchTerm) return history;
+            const lowercasedTerm = searchTerm.toLowerCase();
+            return history.filter(item =>
+                (item.candidateName || '').toLowerCase().includes(lowercasedTerm) ||
+                (item.resumeFileName || '').toLowerCase().includes(lowercasedTerm) ||
+                (item.result?.feedback || '').toLowerCase().includes(lowercasedTerm)
+            );
+        }, [history, searchTerm]);
+
+        return (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Analysis History</h2>
+                    <button onClick={onClearHistory} className="text-sm font-medium text-red-600 hover:text-red-800 dark:hover:text-red-400">Clear History</button>
+                </div>
+                 <div className="relative mb-4">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+                        <SearchIcon className="w-5 h-5 text-slate-400" />
+                    </span>
+                    <input
+                        type="text"
+                        placeholder="Search by name, file, or feedback..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        aria-label="Search analysis history"
+                    />
+                </div>
+                <div className="w-full h-52 mb-6">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} /><XAxis dataKey="name" tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><YAxis allowDecimals={false} tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 1000 }}/><Bar dataKey="count">{chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={index < 4 ? '#ef4444' : index < 7 ? '#f59e0b' : '#22c55e'} />)}</Bar></BarChart>
+                    </ResponsiveContainer>
+                </div>
+                {history.length > 0 ? (
+                    filteredHistory.length > 0 ? (
+                        <ul className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                            {filteredHistory.map(item => (
+                                <li key={item.id}>
+                                    <button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                                        <div className="flex justify-between items-start">
+                                            <p className="font-bold text-lg truncate pr-4">{item.candidateName || item.resumeFileName}</p>
+                                            <p className="font-bold text-lg flex-shrink-0">{item.result.relevanceScore}% Match</p>
+                                        </div>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">{item.timestamp.toLocaleString()}</p>
+                                        
+                                        {(item.candidateEmail || item.candidatePhone) && (
+                                        <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600 text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                                            {item.candidateEmail && (
+                                                <div className="flex items-center gap-2">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                                    <a href={`mailto:${item.candidateEmail}`} onClick={(e) => e.stopPropagation()} className="text-indigo-600 dark:text-indigo-400 hover:underline truncate">{item.candidateEmail}</a>
+                                                </div>
+                                            )}
+                                            {item.candidatePhone && (
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" /></svg>
+                                                    <span className="truncate">{item.candidatePhone}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        )}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                         <p className="text-center text-slate-500 py-8">No matching history found.</p>
+                    )
+                ) : <p className="text-center text-slate-500 py-8">No history yet.</p>}
+            </div>
+        );
+    };
+
+    const AboutUs = () => {
+        const teamMembers = [ { name: 'Nagasudhan T', linkedin: 'https://www.linkedin.com/in/naga-sudhan-36bb88339/' }, { name: 'Sankarapandian A' }, { name: 'Prajith S' }, ];
+        return (
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-4xl mx-auto animate-fade-in">
+                <h2 className="text-3xl font-bold text-center text-slate-900 dark:text-slate-50 mb-8">About Us</h2>
+                <p className="mb-4 text-slate-600 dark:text-slate-300 leading-relaxed">We are a team of passionate developers — Nagasudhan T, Sankarapandian A, and Prajith S — who came together to solve a real challenge faced by companies during recruitment.</p>
+                <p className="mb-8 text-slate-600 dark:text-slate-300 leading-relaxed">Our project, the Resume Evaluator App, is designed to simplify and speed up the hiring process by automatically analyzing and evaluating resumes. The app can efficiently handle up to 1000 PDF resumes at once, making it easier for HR teams and recruiters to shortlist candidates quickly and accurately. Our goal is to bring efficiency, accuracy, and ease to recruitment, helping companies save time while focusing on what truly matters — finding the right talent.</p>
+                <div className="border-t border-slate-200 dark:border-slate-700 my-8"></div>
+                <h3 className="text-2xl font-semibold text-center text-slate-900 dark:text-slate-50 mb-4">Meet the Team</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    {teamMembers.map((member) => (
+                        <div key={member.name} className="text-center p-6 bg-slate-50 dark:bg-slate-700 rounded-lg shadow-sm">
+                            {member.linkedin ? <a href={member.linkedin} target="_blank" rel="noopener noreferrer" className="text-lg font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">{member.name}</a> : <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{member.name}</p>}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    //==================================================================
+    // MAIN APP COMPONENT
+    //==================================================================
+    const App = () => {
+        const [currentView, setCurrentView] = useState('analyzer');
+        const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+        const [resumeFiles, setResumeFiles] = useState([]);
+        const [resumeTexts, setResumeTexts] = useState([]);
+        const [jdText, setJdText] = useState('');
+        const [analysisLanguage, setAnalysisLanguage] = useState('english');
+        const [isLoading, setIsLoading] = useState(false);
+        const [isParsingResumes, setIsParsingResumes] = useState(false);
+        const [error, setError] = useState(null);
+        const [analysisResults, setAnalysisResults] = useState(null);
+        const [viewedAnalysisResult, setViewedAnalysisResult] = useState(null);
+        const [history, setHistory] = useState([]);
+        const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+
+        useEffect(() => {
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            }
+        }, [theme]);
+
+        useEffect(() => {
+            setHistory(getHistory());
+        }, []);
+
+        const handleNavigate = (view) => {
+            setCurrentView(view);
+            setAnalysisResults(null);
+            setViewedAnalysisResult(null);
+            setSelectedHistoryId(null);
+        };
+
+        const handleResumeSelect = async (files) => {
+            setResumeFiles(files);
+            setIsParsingResumes(true);
+            setError(null);
+            try {
+                const texts = await Promise.all(files.map(parseFileAsText));
+                setResumeTexts(texts);
+            } catch (err) {
+                setError(err.message);
+                setResumeFiles([]);
+                setResumeTexts([]);
+            } finally {
+                setIsParsingResumes(false);
+            }
+        };
+        
+        const handleAnalyze = async () => {
+            if (resumeTexts.length === 0 || !jdText) {
+                setError('Please upload at least one resume and provide a job description.');
+                return;
+            }
+            setIsLoading(true);
+            setError(null);
+            setAnalysisResults(null);
+            setViewedAnalysisResult(null);
+            setSelectedHistoryId(null);
+            try {
+                const results = await Promise.all(resumeTexts.map(async (text, i) => {
+                    const result = await geminiAnalyzeResume(text, jdText, analysisLanguage);
+                    if (!result.candidateName || result.candidateName === 'N/A') {
+                        result.candidateName = resumeFiles[i].name.replace(/\.pdf$/i, '');
+                    }
+                    return {
+                        resumeFileName: resumeFiles[i].name,
+                        result
+                    };
+                }));
+                results.sort((a, b) => b.result.relevanceScore - a.result.relevanceScore);
+                setAnalysisResults(results);
+                
+                results.forEach(({ resumeFileName, result }) => addHistoryItem({
+                    resumeFileName,
+                    jdFileName: "Custom JD",
+                    result,
+                    candidateName: result.candidateName,
+                    candidateEmail: result.candidateEmail,
+                    candidatePhone: result.candidatePhone,
+                }));
+                setHistory(getHistory());
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'An unknown error occurred during AI analysis.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        const handleSelectHistoryItem = (id) => {
+            const item = history.find(h => h.id === id);
+            if (item) {
+                setSelectedHistoryId(id);
+                setViewedAnalysisResult(item.result);
+                setAnalysisResults(null);
+            }
+        };
+        
+        const handleClearHistory = () => {
+            clearHistory();
+            setHistory([]);
+            setViewedAnalysisResult(null);
+            setSelectedHistoryId(null);
+        }
+        
+        return (
+            <div className="bg-slate-50 dark:bg-slate-900 min-h-screen font-sans text-slate-800 dark:text-slate-200 transition-colors duration-300">
+                <Header theme={theme} setTheme={setTheme} onNavigate={handleNavigate} />
+                <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+                    {currentView === 'analyzer' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-1 space-y-8">
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                    <ResumeUpload onFileSelect={handleResumeSelect} selectedFiles={resumeFiles} isParsing={isParsingResumes} />
+                                </div>
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                    <JobDescriptionBuilder onJdChange={setJdText} analysisLanguage={analysisLanguage} onLanguageChange={setAnalysisLanguage} />
+                                </div>
+                                <div className="text-center">
+                                    <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading || isParsingResumes}>
+                                        {isLoading ? 'Analyzing...' : 'Analyze with AI'}
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="lg:col-span-2 space-y-8">
+                                {history.length > 0 && <AnalysisHistory history={history} onSelectItem={handleSelectHistoryItem} onClearHistory={handleClearHistory} selectedId={selectedHistoryId} theme={theme} />}
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[300px] flex items-center justify-center">
+                                    {isLoading && <div className="text-center"><Spinner /><p className="mt-4 text-lg">Analyzing... this may take a moment.</p></div>}
+                                    {error && <div className="text-red-600 dark:text-red-400 text-center"><h3 className="font-bold text-lg mb-2">An Error Occurred</h3><p>{error}</p></div>}
+                                    {!isLoading && !error && analysisResults && (
+                                        <div className="w-full space-y-4 max-h-[80vh] overflow-y-auto p-2">
+                                            <h2 className="text-2xl font-bold text-center mb-4">Analysis Complete</h2>
+                                            <p className="text-center text-sm text-slate-500 mb-4">Results are sorted by relevance score.</p>
+                                            {analysisResults.map(({ resumeFileName, result }, index) => (
+                                                <div key={index} className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h3 className="font-bold text-lg text-slate-900 dark:text-slate-50">Candidate: {result.candidateName}</h3>
+                                                        <span className={`px-3 py-1 text-xs font-semibold rounded-full ${result.fitVerdict === 'High' ? 'bg-green-100 text-green-800' : result.fitVerdict === 'Medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{result.fitVerdict} Fit</span>
+                                                    </div>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">File: {resumeFileName}</p>
+                                                    <AnalysisResult data={result} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {!isLoading && !error && !analysisResults && viewedAnalysisResult && <AnalysisResult data={viewedAnalysisResult} />}
+                                    {!isLoading && !error && !analysisResults && !viewedAnalysisResult && <div className="text-center text-slate-500 dark:text-slate-400"><h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200">Ready to Analyze</h2><p className="mt-2">Upload a resume and job description to get started.</p></div>}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <AboutUs />
+                    )}
+                </main>
+            </div>
+        );
+    };
+
+    //==================================================================
+    // RENDER THE APP
+    //==================================================================
+    const rootElement = document.getElementById('root');
+    if (!rootElement) {
+      throw new Error("Could not find root element to mount to");
+    }
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(<App />);
+
+  </script>
+</body>
+</html>
