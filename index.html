@@ -16,7 +16,8 @@
       "recharts": "https://aistudiocdn.com/recharts@^2.12.7",
       "pdfjs-dist/build/pdf.min.mjs": "https://aistudiocdn.com/pdfjs-dist@^4.5.136/build/pdf.min.mjs",
       "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
-      "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1"
+      "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1",
+      "@google/genai": "https://esm.run/@google/genai"
     }
   }
   </script>
@@ -36,6 +37,7 @@
     import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
     import jsPDF from 'jspdf';
     import html2canvas from 'html2canvas';
+    import { GoogleGenAI, Type } from '@google/genai';
 
     //==================================================================
     // TYPES
@@ -107,68 +109,86 @@
     const clearHistory = () => {
         localStorage.removeItem(HISTORY_KEY);
     };
-
+    
     //==================================================================
-    // LOCAL ANALYSIS ALGORITHM (NO API KEY NEEDED)
+    // AI ANALYSIS SERVICE (GEMINI)
     //==================================================================
-    const STOP_WORDS = new Set(['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now']);
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    const extractKeywords = (text) => {
-        if (!text) return new Set();
-        const words = text.toLowerCase()
-            .replace(/[^\w\s-]/g, ' ') // Allow hyphens
-            .split(/\s+/)
-            .filter(word => word.length > 2 && !STOP_WORDS.has(word));
-        return new Set(words);
-    };
+    const geminiAnalyzeResume = async (resumeText, jobDescription, analysisLanguage = 'english') => {
+        const model = 'gemini-2.5-flash';
 
-    const localAnalyzeResume = async (resumeText, jobDescription) => {
-        const jdKeywords = extractKeywords(jobDescription);
-        const resumeKeywords = extractKeywords(resumeText);
-
-        if (jdKeywords.size === 0) {
-            throw new Error("Job description is empty or contains no keywords to analyze.");
-        }
-
-        let matchCount = 0;
-        const missingElements = [];
-
-        for (const keyword of jdKeywords) {
-            if (resumeKeywords.has(keyword)) {
-                matchCount++;
-            } else {
-                missingElements.push({ type: 'Skill', details: keyword });
-            }
-        }
-
-        const relevanceScore = Math.min(100, Math.round((matchCount / jdKeywords.size) * 100));
-        
-        let fitVerdict = FitVerdict.Low;
-        if (relevanceScore > 70) {
-            fitVerdict = FitVerdict.High;
-        } else if (relevanceScore >= 40) {
-            fitVerdict = FitVerdict.Medium;
-        }
-
-        let feedback = '';
-        const missingSkillsExample = missingElements.slice(0, 5).map(e => e.details).join(', ');
-        if (fitVerdict === FitVerdict.Low) {
-            feedback = `The resume appears to be missing several key requirements for this role. To improve the match, focus on highlighting experiences related to these skills from the job description: ${missingSkillsExample}.`;
-        } else if (fitVerdict === FitVerdict.Medium) {
-            feedback = `This is a reasonable match. To strengthen the resume for this specific role, consider providing more detail or explicitly mentioning experience with the following skills: ${missingSkillsExample}.`;
-        } else {
-            feedback = 'This resume is a strong match for the job description. The skills and experiences align well with the core requirements of the role.';
-        }
-
-        return {
-            candidateName: 'N/A', // Placeholder, will be replaced by filename.
-            relevanceScore,
-            fitVerdict,
-            missingElements: missingElements.slice(0, 10), // Show top 10 missing
-            feedback,
-            jobTitleSuggestions: [], // Not supported by local algorithm
-            achievementImpacts: [], // Not supported by local algorithm
+        const schema = {
+            type: Type.OBJECT,
+            properties: {
+                candidateName: { type: Type.STRING, description: "The full name of the candidate found in the resume. If not found, use 'N/A'." },
+                candidateEmail: { type: Type.STRING, description: "The primary email address of the candidate. If not found, return an empty string." },
+                candidatePhone: { type: Type.STRING, description: "The primary phone number of the candidate. If not found, return an empty string." },
+                relevanceScore: { type: Type.INTEGER, description: "A score from 0 to 100 indicating how well the resume matches the job description." },
+                fitVerdict: { type: Type.STRING, description: "A verdict of 'High', 'Medium', or 'Low' fit." },
+                missingElements: {
+                    type: Type.ARRAY,
+                    description: "A list of the top 5-10 most important skills or qualifications from the job description that are missing from the resume.",
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            type: { type: Type.STRING, description: "The type of missing element (e.g., 'Skill', 'Experience')." },
+                            details: { type: Type.STRING, description: "Details about the missing element (e.g., 'React', '5+ years of project management')." },
+                        },
+                        required: ["type", "details"]
+                    }
+                },
+                feedback: { type: Type.STRING, description: `Constructive feedback for the candidate on how to improve their resume for this specific job. This feedback must be written in ${analysisLanguage}.` },
+            },
+            required: ["candidateName", "candidateEmail", "candidatePhone", "relevanceScore", "fitVerdict", "missingElements", "feedback"]
         };
+
+        const prompt = `Analyze the following resume against the provided job description.
+        
+        **Job Description:**
+        ---
+        ${jobDescription}
+        ---
+
+        **Resume Text:**
+        ---
+        ${resumeText}
+        ---
+
+        Based on the analysis, provide a JSON object with the candidate's details, a relevance score, a fit verdict, key missing elements, and actionable feedback. The feedback must be in ${analysisLanguage}. Extract the candidate's name, email, and phone number from the resume.
+        `;
+
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: schema,
+                    temperature: 0.2,
+                },
+            });
+
+            const jsonText = response.text.trim();
+            const result = JSON.parse(jsonText);
+            
+            // Validate fitVerdict
+            const validVerdicts = [FitVerdict.High, FitVerdict.Medium, FitVerdict.Low];
+            if (!validVerdicts.includes(result.fitVerdict)) {
+                result.fitVerdict = FitVerdict.Low;
+            }
+            if (!Array.isArray(result.missingElements)) {
+                result.missingElements = [];
+            }
+            
+            result.jobTitleSuggestions = [];
+            result.achievementImpacts = [];
+
+            return result;
+        } catch (error) {
+            console.error("Error calling Gemini API:", error);
+            throw new Error("Failed to get analysis from the AI. The model may be overloaded or the input is invalid.");
+        }
     };
 
     //==================================================================
@@ -280,8 +300,7 @@
         );
     };
 
-    const JobDescriptionBuilder = ({ onJdChange }) => {
-        const [analysisLanguage, setAnalysisLanguage] = useState('english');
+    const JobDescriptionBuilder = ({ onJdChange, analysisLanguage, onLanguageChange }) => {
         const [experienceYears, setExperienceYears] = useState('');
         const [experienceField, setExperienceField] = useState('');
         const [experiences, setExperiences] = useState([]);
@@ -293,8 +312,10 @@
         const [selectedSkills, setSelectedSkills] = useState([]);
         const [customSkill, setCustomSkill] = useState('');
 
-        const [certificationInput, setCertificationInput] = useState('');
-        const [certifications, setCertifications] = useState([]);
+        const PREDEFINED_CERTIFICATIONS = [ 'Google UX Design Professional Certificate', 'Machine Learning', 'Google Prompting Essentials', 'AI For Everyone', 'IBM Generative AI Engineering Professional Certificate', 'IBM Data Analyst Certificate', 'Responsive Web Design Certification', 'JavaScript Algorithms and Data Structures', 'Programming for Everybody (Getting Started with Python)', 'Associate Android Developer Certification', 'Google Career Certificates (Data Analytics, Project Management, Cybersecurity)', 'Foundations of Digital Marketing & E-commerce', 'Foundations of Cybersecurity', 'English for Career Development', 'Data Analysis with Python', 'Python for Data Science, AI & Development', 'Cybersecurity for Everyone', 'Build a Computer Vision App with Azure Cognitive Services', 'Harvard Business School (HBS Online) — Business Essentials Certificate', 'Harvard Business School — Business Analytics Certificate', 'Certified Financial Planner (CFP)', 'Certified Information Systems Security Professional (CISSP)', 'Certified Management Accountant (CMA)', 'Chartered Financial Analyst (CFA)', 'SANS Institute certification courses', 'Certificate in Cloud Computing', 'AWS Certified Solutions Architect', 'Certified ScrumMaster (CSM)', 'Project Management Professional (PMP)', 'Certified Associate in Project Management (CAPM)', 'CBAP (Certified Business Analysis Professional)', 'IIBA-AAC (Agile Analysis Certification)', 'CPIM (Certified in Production and Inventory Management)', 'CSCP (Certified Supply Chain Professional)', 'CLTD (Certified in Logistics, Transportation and Distribution)', 'Digital Strategy Certificate', 'Leadership & Management Certificate', 'Business Strategy Certificate', 'HBR (Harvard Business Review) online certificates', 'Micro-credentials in Artificial Intelligence', 'Data Science Professional Certificate', 'Big Data Engineering Certificate', 'SQL for Data Science Certificate', 'Tableau / Power BI Data Visualization Certification', 'Google Cloud Professional Architect / Data Engineer Certificates', 'Microsoft Azure Certifications', 'CompTIA Certifications (Security+, Network+, A+)', 'Cisco Certified Network Associate (CCNA)', 'Certified Ethical Hacker (CEH)', 'UX / UI Design Certifications', 'Graphic Design Certificates', 'Digital Marketing Certificates', 'SEO / SEM Certificates', 'Social Media Marketing Certificates', 'Content Marketing Certificates', 'Copywriting Certificates', 'Public Speaking / Communication Skills Certificates', 'Foreign Language Certifications', 'Teaching Certifications / TESOL / TEFL', 'Health & Safety / First Aid Certifications', 'Nutrition / Wellness Coaching Certificates', 'Personal Trainer Certificates', 'Mental Health / Counselling Certifications', 'Yoga & Mindfulness Instructor Certifications', 'Graphic Animation / Motion Graphics Certificates', 'Cybersecurity Incident Response Certificates', 'DevOps Certification', 'Blockchain Developer Certificates', 'Cryptocurrency / FinTech Specialist Certificates', 'SAP Certifications', 'Six Sigma Green Belt / Black Belt Certifications', 'Lean Management Certificates', 'ISO Standards Auditor Certificates', 'Environmental Sustainability / ESG Certificates', 'Project Risk Management Certificate', 'Artificial Neural Networks / Deep Learning Certificates', 'Internet of Things (IoT) Certificates', 'Robotics / Automation Certificates', 'Game Development Certificates', 'Mobile App Development Certificates', 'Full Stack Web Development Certificates', 'Front-end / Back-end Web Dev Certificates', 'Cyber Law / Data Privacy Certificates', 'Financial Technology (FinTech) Certificates', 'Insurance / Actuarial Science Certificates', 'Real Estate / Property Management Certificates', 'Hospitality Management Certificates', 'Event Management Certificates', 'Supply Chain Analytics Certificates', 'Business Analytics Certificates', 'UX Research Certificates', 'Behavioral Design Certificates', 'Product Management Certificates', 'Scrum / Agile Coaching Certificates', 'Risk & Compliance Certificates', 'Quality Assurance / Testing Certificates (Software QA)', 'Game Theory / Algorithmic Thinking Certificates', 'Scientific Research Methods Certificates', 'Public Policy / Governance Certificates', 'Intellectual Property Law / Patent Agent Certificates' ];
+        const [allCertifications, setAllCertifications] = useState(PREDEFINED_CERTIFICATIONS);
+        const [selectedCertifications, setSelectedCertifications] = useState([]);
+        const [customCertification, setCustomCertification] = useState('');
 
         const PREDEFINED_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Mandarin'];
         const [allLanguages, setAllLanguages] = useState(PREDEFINED_LANGUAGES);
@@ -312,14 +333,14 @@
             if (selectedSkills.length > 0) {
                 sections.push("Required Skills: " + selectedSkills.join(', ') + '.');
             }
-            if (certifications.length > 0) {
-                sections.push("Preferred Certifications: " + certifications.join(', ') + '.');
+            if (selectedCertifications.length > 0) {
+                sections.push("Preferred Certifications: " + selectedCertifications.join(', ') + '.');
             }
             if (selectedLanguages.length > 0) {
                 sections.push("Languages: " + selectedLanguages.join(', ') + '.');
             }
             onJdChange(sections.join('\n\n'));
-        }, [experiences, educationLevel, educationField, selectedSkills, certifications, selectedLanguages, onJdChange]);
+        }, [experiences, educationLevel, educationField, selectedSkills, selectedCertifications, selectedLanguages, onJdChange]);
 
         const handleAddExperience = () => {
             if (experienceYears && experienceField) {
@@ -341,13 +362,16 @@
             }
         };
 
-        const handleAddCertification = () => {
-            if (certificationInput && !certifications.includes(certificationInput)) {
-                setCertifications([...certifications, certificationInput]);
-                setCertificationInput('');
+        const handleToggleCertification = (cert) => {
+            setSelectedCertifications(prev => prev.includes(cert) ? prev.filter(c => c !== cert) : [...prev, cert]);
+        };
+        const handleAddCustomCertification = () => {
+            if (customCertification && !allCertifications.includes(customCertification)) {
+                setAllCertifications([...allCertifications, customCertification]);
+                setSelectedCertifications([...selectedCertifications, customCertification]);
+                setCustomCertification('');
             }
         };
-        const handleRemoveCertification = (index) => setCertifications(certifications.filter((_, i) => i !== index));
 
         const handleToggleLanguage = (lang) => {
             setSelectedLanguages(prev => prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]);
@@ -367,12 +391,12 @@
                         <BriefcaseIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />
                         <h2>Job Description Builder</h2>
                     </div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 -mt-6">Build a job description by selecting the required criteria below.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Build a job description by selecting the required criteria below.</p>
                 </div>
 
                 <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
                     <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><LanguagesIcon className="w-5 h-5 mr-2" />Analysis Language</label>
-                    <select value={analysisLanguage} onChange={e => setAnalysisLanguage(e.target.value)} className="w-full text-sm p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <select value={analysisLanguage} onChange={e => onLanguageChange(e.target.value)} className="w-full text-sm p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option value="english">English</option>
                         <option value="spanish">Spanish</option>
                         <option value="french">French</option>
@@ -435,17 +459,20 @@
 
                 <div className="space-y-4">
                     <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><CertificationIcon className="w-5 h-5 mr-2" />Certifications</label>
-                     <div className="flex gap-2">
-                        <input type="text" value={certificationInput} onChange={e => setCertificationInput(e.target.value)} placeholder="e.g., AWS Certified Cloud Practitioner" className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <button onClick={handleAddCertification} disabled={!certificationInput} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-slate-400">Add</button>
+                     <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                        {allCertifications.map(cert => {
+                            const isSelected = selectedCertifications.includes(cert);
+                            return (
+                                <button key={cert} onClick={() => handleToggleCertification(cert)} className={`flex items-center text-sm px-3 py-1 rounded-full transition-colors ${isSelected ? 'bg-amber-600 text-white' : 'bg-white dark:bg-slate-700 hover:bg-amber-50 dark:hover:bg-slate-600'}`}>
+                                    {isSelected && <CheckIcon className="w-4 h-4 mr-1" />}
+                                    {cert}
+                                </button>
+                            );
+                        })}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        {certifications.map((cert, i) => (
-                            <div key={i} className="flex items-center bg-white dark:bg-slate-800 text-sm p-2 rounded-md shadow-sm border border-slate-200 dark:border-slate-700">
-                                <span>{cert}</span>
-                                <button onClick={() => handleRemoveCertification(i)} className="ml-2 text-slate-400 hover:text-red-500"><XCircleIcon className="w-5 h-5" /></button>
-                            </div>
-                        ))}
+                    <div className="flex gap-2">
+                        <input type="text" value={customCertification} onChange={e => setCustomCertification(e.target.value)} placeholder="Add a custom certification..." className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={handleAddCustomCertification} disabled={!customCertification} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:bg-slate-400">Add</button>
                     </div>
                 </div>
                 
@@ -555,7 +582,34 @@
                 </div>
                 {history.length > 0 ? (
                     <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                        {history.map(item => (<li key={item.id}><button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><p className="font-bold">{item.candidateName}</p><p className="text-sm text-slate-500 dark:text-slate-400">{item.timestamp.toLocaleString()}</p><p className="font-bold text-lg">{item.result.relevanceScore}% Match</p></button></li>))}
+                        {history.map(item => (
+                            <li key={item.id}>
+                                <button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                                    <div className="flex justify-between items-start">
+                                        <p className="font-bold text-lg truncate pr-4">{item.candidateName || item.resumeFileName}</p>
+                                        <p className="font-bold text-lg flex-shrink-0">{item.result.relevanceScore}% Match</p>
+                                    </div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">{item.timestamp.toLocaleString()}</p>
+                                    
+                                    {(item.candidateEmail || item.candidatePhone) && (
+                                    <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600 text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                                        {item.candidateEmail && (
+                                            <div className="flex items-center gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                                <a href={`mailto:${item.candidateEmail}`} onClick={(e) => e.stopPropagation()} className="text-indigo-600 dark:text-indigo-400 hover:underline truncate">{item.candidateEmail}</a>
+                                            </div>
+                                        )}
+                                        {item.candidatePhone && (
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" /></svg>
+                                                <span className="truncate">{item.candidatePhone}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    )}
+                                </button>
+                            </li>
+                        ))}
                     </ul>
                 ) : <p className="text-center text-slate-500">No history yet.</p>}
             </div>
@@ -591,6 +645,7 @@
         const [resumeFiles, setResumeFiles] = useState([]);
         const [resumeTexts, setResumeTexts] = useState([]);
         const [jdText, setJdText] = useState('');
+        const [analysisLanguage, setAnalysisLanguage] = useState('english');
         const [isLoading, setIsLoading] = useState(false);
         const [isParsingResumes, setIsParsingResumes] = useState(false);
         const [error, setError] = useState(null);
@@ -647,11 +702,11 @@
             setViewedAnalysisResult(null);
             setSelectedHistoryId(null);
             try {
-                // Use the new local algorithm instead of the API
                 const results = await Promise.all(resumeTexts.map(async (text, i) => {
-                    const result = await localAnalyzeResume(text, jdText);
-                    const candidateName = resumeFiles[i].name.replace(/\.pdf$/i, ''); // Use filename as candidate name
-                    result.candidateName = candidateName;
+                    const result = await geminiAnalyzeResume(text, jdText, analysisLanguage);
+                    if (!result.candidateName || result.candidateName === 'N/A') {
+                        result.candidateName = resumeFiles[i].name.replace(/\.pdf$/i, '');
+                    }
                     return {
                         resumeFileName: resumeFiles[i].name,
                         result
@@ -659,15 +714,18 @@
                 }));
                 results.sort((a, b) => b.result.relevanceScore - a.result.relevanceScore);
                 setAnalysisResults(results);
+                
                 results.forEach(({ resumeFileName, result }) => addHistoryItem({
                     resumeFileName,
                     jdFileName: "Custom JD",
                     result,
                     candidateName: result.candidateName,
+                    candidateEmail: result.candidateEmail,
+                    candidatePhone: result.candidatePhone,
                 }));
                 setHistory(getHistory());
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'An unknown error occurred during local analysis.');
+                setError(err instanceof Error ? err.message : 'An unknown error occurred during AI analysis.');
             } finally {
                 setIsLoading(false);
             }
@@ -700,11 +758,11 @@
                                     <ResumeUpload onFileSelect={handleResumeSelect} selectedFiles={resumeFiles} isParsing={isParsingResumes} />
                                 </div>
                                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                                    <JobDescriptionBuilder onJdChange={setJdText} />
+                                    <JobDescriptionBuilder onJdChange={setJdText} analysisLanguage={analysisLanguage} onLanguageChange={setAnalysisLanguage} />
                                 </div>
                                 <div className="text-center">
                                     <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading || isParsingResumes}>
-                                        {isLoading ? 'Analyzing...' : 'Analyze Now'}
+                                        {isLoading ? 'Analyzing...' : 'Analyze with AI'}
                                     </Button>
                                 </div>
                             </div>
