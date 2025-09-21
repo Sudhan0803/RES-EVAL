@@ -16,7 +16,8 @@
       "recharts": "https://aistudiocdn.com/recharts@^2.12.7",
       "pdfjs-dist/build/pdf.min.mjs": "https://aistudiocdn.com/pdfjs-dist@^4.5.136/build/pdf.min.mjs",
       "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
-      "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1"
+      "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1",
+      "@google/genai": "https://esm.run/@google/genai"
     }
   }
   </script>
@@ -36,6 +37,7 @@
     import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
     import jsPDF from 'jspdf';
     import html2canvas from 'html2canvas';
+    import { GoogleGenAI, Type } from '@google/genai';
 
     //==================================================================
     // TYPES
@@ -109,105 +111,84 @@
     };
     
     //==================================================================
-    // LOCAL ANALYSIS ALGORITHM
+    // AI ANALYSIS SERVICE (GEMINI)
     //==================================================================
-    const localAnalyzeResume = async (resumeText, jobDescription) => {
-        // 1. Normalize texts for comparison
-        const normalizedResume = resumeText.toLowerCase().replace(/[^\w\s-]/g, ' ');
-        const normalizedJd = jobDescription.toLowerCase().replace(/[^\w\s-]/g, ' ');
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-        // 2. Extract keywords from the job description
-        const keywords = new Set();
-        const addKeywords = (text) => {
-            if (text) {
-                text.toLowerCase().split(',').forEach(k => {
-                    const trimmed = k.trim();
-                    if(trimmed) keywords.add(trimmed);
-                });
+    const geminiAnalyzeResume = async (resumeText, jobDescription, analysisLanguage = 'english') => {
+        const model = 'gemini-2.5-flash';
+
+        const schema = {
+            type: Type.OBJECT,
+            properties: {
+                candidateName: { type: Type.STRING, description: "The full name of the candidate found in the resume. If not found, use 'N/A'." },
+                candidateEmail: { type: Type.STRING, description: "The primary email address of the candidate. If not found, return an empty string." },
+                candidatePhone: { type: Type.STRING, description: "The primary phone number of the candidate. If not found, return an empty string." },
+                relevanceScore: { type: Type.INTEGER, description: "A score from 0 to 100 indicating how well the resume matches the job description." },
+                fitVerdict: { type: Type.STRING, description: "A verdict of 'High', 'Medium', or 'Low' fit." },
+                missingElements: {
+                    type: Type.ARRAY,
+                    description: "A list of the top 5-10 most important skills or qualifications from the job description that are missing from the resume.",
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            type: { type: Type.STRING, description: "The type of missing element (e.g., 'Skill', 'Experience')." },
+                            details: { type: Type.STRING, description: "Details about the missing element (e.g., 'React', '5+ years of project management')." },
+                        },
+                        required: ["type", "details"]
+                    }
+                },
+                feedback: { type: Type.STRING, description: `Constructive feedback for the candidate on how to improve their resume for this specific job. This feedback must be written in ${analysisLanguage}.` },
+            },
+            required: ["candidateName", "candidateEmail", "candidatePhone", "relevanceScore", "fitVerdict", "missingElements", "feedback"]
+        };
+
+        const prompt = `Analyze the following resume against the provided job description.
+        
+        **Job Description:**
+        ---
+        ${jobDescription}
+        ---
+
+        **Resume Text:**
+        ---
+        ${resumeText}
+        ---
+
+        Based on the analysis, provide a JSON object with the candidate's details, a relevance score, a fit verdict, key missing elements, and actionable feedback. The feedback must be in ${analysisLanguage}. Extract the candidate's name, email, and phone number from the resume.
+        `;
+
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: schema,
+                    temperature: 0.2,
+                },
+            });
+
+            const jsonText = response.text.trim();
+            const result = JSON.parse(jsonText);
+            
+            // Validate fitVerdict
+            const validVerdicts = [FitVerdict.High, FitVerdict.Medium, FitVerdict.Low];
+            if (!validVerdicts.includes(result.fitVerdict)) {
+                result.fitVerdict = FitVerdict.Low;
             }
-        };
+            if (!Array.isArray(result.missingElements)) {
+                result.missingElements = [];
+            }
+            
+            result.jobTitleSuggestions = [];
+            result.achievementImpacts = [];
 
-        const skillMatches = jobDescription.match(/Required Skills: (.*?)(?:\.|\n\n)/);
-        addKeywords(skillMatches?.[1]);
-
-        const certMatches = jobDescription.match(/Preferred Certifications: (.*?)(?:\.|\n\n)/);
-        addKeywords(certMatches?.[1]);
-
-        const expMatches = [...jobDescription.matchAll(/- (\d+)\+? years in (.*?)\n/g)];
-        expMatches.forEach(match => {
-            const field = match[2].trim().toLowerCase();
-            if(field) keywords.add(field);
-        });
-
-        const uniqueKeywords = [...keywords];
-
-        // 3. Match keywords and find missing ones
-        let matchedKeywordsCount = 0;
-        const missingElements = [];
-
-        if (uniqueKeywords.length > 0) {
-            uniqueKeywords.forEach(keyword => {
-                const keywordRegex = new RegExp(`\\b${keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
-                if (keywordRegex.test(normalizedResume)) {
-                    matchedKeywordsCount++;
-                } else {
-                    missingElements.push({ type: 'Keyword', details: keyword });
-                }
-            });
-        } else {
-            // Fallback for raw text JD: split into words
-            const jdWords = new Set(normalizedJd.split(/\s+/).filter(w => w.length > 3));
-            jdWords.forEach(word => {
-                if (normalizedResume.includes(word)) {
-                    matchedKeywordsCount++;
-                }
-            });
-            if (jdWords.size === 0) matchedKeywordsCount = 1; // Avoid division by zero
+            return result;
+        } catch (error) {
+            console.error("Error calling Gemini API:", error);
+            throw new Error("Failed to get analysis from the AI. The model may be overloaded or the input is invalid.");
         }
-        
-        // 4. Calculate score
-        const totalKeywords = uniqueKeywords.length > 0 ? uniqueKeywords.length : new Set(normalizedJd.split(/\s+/).filter(w => w.length > 3)).size;
-        const relevanceScore = totalKeywords > 0 ? Math.min(100, Math.round((matchedKeywordsCount / totalKeywords) * 100)) : 0;
-
-        // 5. Determine verdict
-        let fitVerdict = FitVerdict.Low;
-        if (relevanceScore >= 75) {
-            fitVerdict = FitVerdict.High;
-        } else if (relevanceScore >= 50) {
-            fitVerdict = FitVerdict.Medium;
-        }
-
-        // 6. Generate feedback
-        let feedback = "The resume shows some alignment with the job description. ";
-        if (missingElements.length > 0) {
-            feedback += `To improve the match, consider highlighting experience with: ${missingElements.slice(0, 5).map(m => m.details).join(', ')}.`;
-        } else if (relevanceScore < 70) {
-            feedback += "Consider tailoring the resume further to emphasize the specific requirements mentioned in the job description.";
-        } else {
-            feedback = "The resume is a strong match for the job description. No major gaps were identified based on the provided keywords."
-        }
-
-        // 7. Extract contact info using regular expressions
-        const emailMatch = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
-        const phoneMatch = resumeText.match(/(?:\+?(\d{1,3}))?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})/);
-        
-        let candidateName = 'N/A';
-        const nameMatch = resumeText.substring(0, 150).match(/([A-Z][a-z'-]+(?:\s[A-Z][a-z'-]+){1,2})/);
-        if (nameMatch) {
-            candidateName = nameMatch[0];
-        }
-
-        return {
-            candidateName,
-            candidateEmail: emailMatch ? emailMatch[0] : "",
-            candidatePhone: phoneMatch ? phoneMatch[0] : "",
-            relevanceScore,
-            fitVerdict,
-            missingElements,
-            feedback,
-            jobTitleSuggestions: [],
-            achievementImpacts: []
-        };
     };
 
     //==================================================================
@@ -223,7 +204,7 @@
     const CertificationIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> </svg> );
     const CheckIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143z" clipRule="evenodd" /> </svg> );
     const XCircleIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" {...props}> <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" /> </svg> );
-    
+
     //==================================================================
     // SIMPLE COMPONENTS
     //==================================================================
@@ -257,7 +238,7 @@
             </header>
         );
     };
-    
+
     const ResumeUpload = ({ onFileSelect, selectedFiles, isParsing }) => {
         const fileInputRef = useRef(null);
         const [fileCount, setFileCount] = useState('1');
@@ -319,7 +300,7 @@
         );
     };
 
-    const JobDescriptionBuilder = ({ onJdChange }) => {
+    const JobDescriptionBuilder = ({ onJdChange, analysisLanguage, onLanguageChange }) => {
         const [experienceYears, setExperienceYears] = useState('');
         const [experienceField, setExperienceField] = useState('');
         const [experiences, setExperiences] = useState([]);
@@ -331,10 +312,8 @@
         const [selectedSkills, setSelectedSkills] = useState([]);
         const [customSkill, setCustomSkill] = useState('');
 
-        const PREDEFINED_CERTIFICATIONS = [ 'Google UX Design Professional Certificate', 'Machine Learning — Coursera', 'Google Prompting Essentials', 'AI For Everyone', 'IBM Generative AI Engineering Professional Certificate', 'IBM Data Analyst Certificate', 'Responsive Web Design Certification', 'JavaScript Algorithms and Data Structures', 'Programming for Everybody (Python)', 'Associate Android Developer Certification', 'Google Career Certificates', 'Foundations of Digital Marketing & E-commerce', 'Foundations of Cybersecurity', 'English for Career Development', 'Data Analysis with Python', 'Python for Data Science, AI & Development', 'Cybersecurity for Everyone', 'Build a Computer Vision App with Azure', 'Harvard Business School (HBS Online) Certificates', 'Certified Financial Planner (CFP)', 'Certified Information Systems Security Professional (CISSP)', 'Certified Management Accountant (CMA)', 'Chartered Financial Analyst (CFA)', 'SANS Institute Certifications', 'Certificate in Cloud Computing', 'AWS Certified Solutions Architect', 'Certified ScrumMaster (CSM)', 'Project Management Professional (PMP)', 'Certified Associate in Project Management (CAPM)', 'Certified Business Analysis Professional (CBAP)', 'IIBA-AAC (Agile Analysis Certification)', 'CPIM', 'CSCP', 'CLTD', 'Digital Strategy Certificate', 'Leadership & Management Certificate', 'Micro-credentials in Artificial Intelligence', 'Data Science Professional Certificate', 'Big Data Engineering Certificate', 'SQL for Data Science Certificate', 'Tableau / Power BI Certification', 'Google Cloud Professional Architect', 'Microsoft Azure Certifications', 'CompTIA Certifications (Security+, Network+, A+)', 'Cisco Certified Network Associate (CCNA)', 'Certified Ethical Hacker (CEH)', 'UX / UI Design Certifications', 'Graphic Design Certificates', 'Digital Marketing Certificates', 'SEO / SEM Certificates', 'Social Media Marketing Certificates', 'Content Marketing Certificates', 'Copywriting Certificates', 'Public Speaking Certificates', 'Foreign Language Certifications', 'Teaching Certifications (TESOL/TEFL)', 'Health & Safety / First Aid Certifications', 'Nutrition / Wellness Coaching Certificates', 'Personal Trainer Certificates', 'Mental Health / Counselling Certifications', 'Yoga & Mindfulness Instructor Certifications', 'Graphic Animation / Motion Graphics Certificates', 'Cybersecurity Incident Response Certificates', 'DevOps Certification', 'Blockchain Developer Certificates', 'Cryptocurrency / FinTech Specialist Certificates', 'SAP Certifications', 'Six Sigma Green Belt / Black Belt', 'Lean Management Certificates', 'ISO Standards Auditor Certificates', 'Environmental Sustainability / ESG Certificates', 'Project Risk Management Certificate', 'Deep Learning Certificates', 'Internet of Things (IoT) Certificates', 'Robotics / Automation Certificates', 'Game Development Certificates', 'Mobile App Development Certificates', 'Full Stack Web Development Certificates', 'Cyber Law / Data Privacy Certificates', 'Financial Technology (FinTech) Certificates', 'Insurance / Actuarial Science Certificates', 'Real Estate / Property Management Certificates', 'Hospitality Management Certificates', 'Event Management Certificates', 'Supply Chain Analytics Certificates', 'Business Analytics Certificates', 'UX Research Certificates', 'Behavioral Design Certificates', 'Product Management Certificates', 'Scrum / Agile Coaching Certificates', 'Risk & Compliance Certificates', 'Software QA Testing Certificates', 'Game Theory Certificates', 'Scientific Research Methods Certificates', 'Public Policy / Governance Certificates', 'Intellectual Property Law Certificates' ];
-        const [allCerts, setAllCerts] = useState(PREDEFINED_CERTIFICATIONS);
-        const [selectedCerts, setSelectedCerts] = useState([]);
-        const [customCert, setCustomCert] = useState('');
+        const [certificationInput, setCertificationInput] = useState('');
+        const [certifications, setCertifications] = useState([]);
 
         const PREDEFINED_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Mandarin'];
         const [allLanguages, setAllLanguages] = useState(PREDEFINED_LANGUAGES);
@@ -352,14 +331,14 @@
             if (selectedSkills.length > 0) {
                 sections.push("Required Skills: " + selectedSkills.join(', ') + '.');
             }
-            if (selectedCerts.length > 0) {
-                sections.push("Preferred Certifications: " + selectedCerts.join(', ') + '.');
+            if (certifications.length > 0) {
+                sections.push("Preferred Certifications: " + certifications.join(', ') + '.');
             }
             if (selectedLanguages.length > 0) {
                 sections.push("Languages: " + selectedLanguages.join(', ') + '.');
             }
             onJdChange(sections.join('\n\n'));
-        }, [experiences, educationLevel, educationField, selectedSkills, selectedCerts, selectedLanguages, onJdChange]);
+        }, [experiences, educationLevel, educationField, selectedSkills, certifications, selectedLanguages, onJdChange]);
 
         const handleAddExperience = () => {
             if (experienceYears && experienceField) {
@@ -380,18 +359,15 @@
                 setCustomSkill('');
             }
         };
-        
-        const handleToggleCert = (cert) => {
-            setSelectedCerts(prev => prev.includes(cert) ? prev.filter(c => c !== cert) : [...prev, cert]);
-        };
-        const handleAddCustomCert = () => {
-            if (customCert && !allCerts.includes(customCert)) {
-                setAllCerts([...allCerts, customCert]);
-                setSelectedCerts([...selectedCerts, customCert]);
-                setCustomCert('');
+
+        const handleAddCertification = () => {
+            if (certificationInput && !certifications.includes(certificationInput)) {
+                setCertifications([...certifications, certificationInput]);
+                setCertificationInput('');
             }
         };
-        
+        const handleRemoveCertification = (index) => setCertifications(certifications.filter((_, i) => i !== index));
+
         const handleToggleLanguage = (lang) => {
             setSelectedLanguages(prev => prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]);
         };
@@ -410,7 +386,19 @@
                         <BriefcaseIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />
                         <h2>Job Description Builder</h2>
                     </div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Build a job description by selecting the required criteria below.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 -mt-6">Build a job description by selecting the required criteria below.</p>
+                </div>
+
+                <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><LanguagesIcon className="w-5 h-5 mr-2" />Analysis Language</label>
+                    <select value={analysisLanguage} onChange={e => onLanguageChange(e.target.value)} className="w-full text-sm p-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="english">English</option>
+                        <option value="spanish">Spanish</option>
+                        <option value="french">French</option>
+                        <option value="german">German</option>
+                        <option value="mandarin">Mandarin</option>
+                    </select>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">The AI feedback will be provided in the selected language.</p>
                 </div>
 
                 <div className="space-y-4">
@@ -466,20 +454,17 @@
 
                 <div className="space-y-4">
                     <label className="flex items-center text-md font-semibold text-slate-700 dark:text-slate-200"><CertificationIcon className="w-5 h-5 mr-2" />Certifications</label>
-                     <div className="max-h-48 overflow-y-auto flex flex-wrap gap-2 p-2 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                        {allCerts.map(cert => {
-                            const isSelected = selectedCerts.includes(cert);
-                            return (
-                                <button key={cert} onClick={() => handleToggleCert(cert)} className={`flex items-center text-xs px-2 py-1 rounded-full transition-colors ${isSelected ? 'bg-purple-600 text-white' : 'bg-white dark:bg-slate-700 hover:bg-purple-50 dark:hover:bg-slate-600'}`}>
-                                    {isSelected && <CheckIcon className="w-3 h-3 mr-1" />}
-                                    {cert}
-                                </button>
-                            );
-                        })}
+                     <div className="flex gap-2">
+                        <input type="text" value={certificationInput} onChange={e => setCertificationInput(e.target.value)} placeholder="e.g., AWS Certified Cloud Practitioner" className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={handleAddCertification} disabled={!certificationInput} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-slate-400">Add</button>
                     </div>
-                    <div className="flex gap-2">
-                        <input type="text" value={customCert} onChange={e => setCustomCert(e.target.value)} placeholder="Add a custom certification..." className="flex-grow w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        <button onClick={handleAddCustomCert} disabled={!customCert} className="px-4 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-slate-400">Add</button>
+                    <div className="flex flex-wrap gap-2">
+                        {certifications.map((cert, i) => (
+                            <div key={i} className="flex items-center bg-white dark:bg-slate-800 text-sm p-2 rounded-md shadow-sm border border-slate-200 dark:border-slate-700">
+                                <span>{cert}</span>
+                                <button onClick={() => handleRemoveCertification(i)} className="ml-2 text-slate-400 hover:text-red-500"><XCircleIcon className="w-5 h-5" /></button>
+                            </div>
+                        ))}
                     </div>
                 </div>
                 
@@ -543,13 +528,10 @@
             const canvasHeight = canvas.height;
             const ratio = canvasHeight / canvasWidth;
             let finalHeight = pdfWidth * ratio;
-            let finalWidth = pdfWidth;
-            if(finalHeight > pdfHeight){
+            if (finalHeight > pdfHeight) {
                 finalHeight = pdfHeight;
-                finalWidth = pdfHeight / ratio;
             }
-            
-            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, finalWidth, finalHeight); 
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, finalHeight); 
             pdf.save(`SkillScan_Analysis_${data.candidateName || 'Report'}.pdf`); 
           } catch(e) { 
             console.error(e); 
@@ -569,7 +551,7 @@
                         <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Relevance Score</span><ScoreGauge score={data.relevanceScore} /></div>
                         <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Fit Verdict</span><span className={`px-4 py-1.5 text-lg font-semibold rounded-full ${getVerdictClass(data.fitVerdict)}`}>{data.fitVerdict}</span></div>
                     </div>
-                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Missing Skills & Qualifications</h3>{data.missingElements.length > 0 ? <p className="text-slate-600 dark:text-slate-300">{data.missingElements.map(item => item.details).join(', ')}</p> : <p>No significant skill gaps found in the resume.</p>}</div>
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Missing Skills</h3>{data.missingElements.length > 0 ? <p className="text-slate-600 dark:text-slate-300">{data.missingElements.map(item => item.details).join(', ')}</p> : <p>No significant skill gaps found in the resume.</p>}</div>
                     <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Actionable Feedback</h3><p>{data.feedback}</p></div>
                 </div>
             </div>
@@ -583,7 +565,7 @@
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Analysis History</h2>
-                    <button onClick={onClearHistory} disabled={history.length === 0} className="text-sm font-medium text-red-600 hover:text-red-800 disabled:text-slate-400 dark:hover:text-red-400">Clear History</button>
+                    <button onClick={onClearHistory} className="text-sm font-medium text-red-600 hover:text-red-800 dark:hover:text-red-400">Clear History</button>
                 </div>
                 <div className="w-full h-52 mb-6">
                     <ResponsiveContainer width="100%" height="100%">
@@ -597,7 +579,7 @@
                                 <button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
                                     <div className="flex justify-between items-start">
                                         <p className="font-bold text-lg truncate pr-4">{item.candidateName || item.resumeFileName}</p>
-                                        <p className="font-bold text-lg flex-shrink-0">{item.result.relevanceScore}%</p>
+                                        <p className="font-bold text-lg flex-shrink-0">{item.result.relevanceScore}% Match</p>
                                     </div>
                                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">{item.timestamp.toLocaleString()}</p>
                                     
@@ -655,6 +637,7 @@
         const [resumeFiles, setResumeFiles] = useState([]);
         const [resumeTexts, setResumeTexts] = useState([]);
         const [jdText, setJdText] = useState('');
+        const [analysisLanguage, setAnalysisLanguage] = useState('english');
         const [isLoading, setIsLoading] = useState(false);
         const [isParsingResumes, setIsParsingResumes] = useState(false);
         const [error, setError] = useState(null);
@@ -662,7 +645,7 @@
         const [viewedAnalysisResult, setViewedAnalysisResult] = useState(null);
         const [history, setHistory] = useState([]);
         const [selectedHistoryId, setSelectedHistoryId] = useState(null);
-        
+
         useEffect(() => {
             if (theme === 'dark') {
                 document.documentElement.classList.add('dark');
@@ -711,11 +694,8 @@
             setViewedAnalysisResult(null);
             setSelectedHistoryId(null);
             try {
-                // Use a short delay to allow UI to update to loading state
-                await new Promise(resolve => setTimeout(resolve, 50));
-
                 const results = await Promise.all(resumeTexts.map(async (text, i) => {
-                    const result = await localAnalyzeResume(text, jdText);
+                    const result = await geminiAnalyzeResume(text, jdText, analysisLanguage);
                     if (!result.candidateName || result.candidateName === 'N/A') {
                         result.candidateName = resumeFiles[i].name.replace(/\.pdf$/i, '');
                     }
@@ -737,7 +717,7 @@
                 }));
                 setHistory(getHistory());
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'An unknown error occurred during analysis.');
+                setError(err instanceof Error ? err.message : 'An unknown error occurred during AI analysis.');
             } finally {
                 setIsLoading(false);
             }
@@ -749,7 +729,6 @@
                 setSelectedHistoryId(id);
                 setViewedAnalysisResult(item.result);
                 setAnalysisResults(null);
-                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
             }
         };
         
@@ -765,43 +744,46 @@
                 <Header theme={theme} setTheme={setTheme} onNavigate={handleNavigate} />
                 <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
                     {currentView === 'analyzer' ? (
-                        <>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <div className="lg:col-span-1 space-y-8">
-                                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                                        <ResumeUpload onFileSelect={handleResumeSelect} selectedFiles={resumeFiles} isParsing={isParsingResumes} />
-                                    </div>
-                                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                                        <JobDescriptionBuilder onJdChange={setJdText} />
-                                    </div>
-                                    <div className="text-center">
-                                        <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading || isParsingResumes}>
-                                            {isLoading ? 'Analyzing...' : 'Analyze Resumes'}
-                                        </Button>
-                                    </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-1 space-y-8">
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                    <ResumeUpload onFileSelect={handleResumeSelect} selectedFiles={resumeFiles} isParsing={isParsingResumes} />
                                 </div>
-                                <div className="lg:col-span-2 space-y-8">
-                                    {history.length > 0 && <AnalysisHistory history={history} onSelectItem={handleSelectHistoryItem} onClearHistory={handleClearHistory} selectedId={selectedHistoryId} theme={theme} />}
-                                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[300px] flex items-center justify-center">
-                                        {isLoading && <div className="text-center"><Spinner /><p className="mt-4 text-lg">Analyzing... this may take a moment.</p></div>}
-                                        {error && <div className="text-red-600 dark:text-red-400 text-center"><h3 className="font-bold text-lg mb-2">An Error Occurred</h3><p>{error}</p></div>}
-                                        {!isLoading && !error && analysisResults && (
-                                            <div className="w-full space-y-4 max-h-[80vh] overflow-y-auto p-2">
-                                                <h2 className="text-2xl font-bold text-center mb-4">Analysis Complete</h2>
-                                                <p className="text-center text-sm text-slate-500 mb-4">Results are sorted by relevance score.</p>
-                                                {analysisResults.map(({ resumeFileName, result }, index) => (
-                                                    <div key={index} className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                                                        <AnalysisResult data={result} />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                        {!isLoading && !error && !analysisResults && viewedAnalysisResult && <AnalysisResult data={viewedAnalysisResult} />}
-                                        {!isLoading && !error && !analysisResults && !viewedAnalysisResult && <div className="text-center text-slate-500 dark:text-slate-400"><h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200">Ready to Analyze</h2><p className="mt-2">Upload a resume and build a job description to get started.</p></div>}
-                                    </div>
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                    <JobDescriptionBuilder onJdChange={setJdText} analysisLanguage={analysisLanguage} onLanguageChange={setAnalysisLanguage} />
+                                </div>
+                                <div className="text-center">
+                                    <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading || isParsingResumes}>
+                                        {isLoading ? 'Analyzing...' : 'Analyze with AI'}
+                                    </Button>
                                 </div>
                             </div>
-                        </>
+                            <div className="lg:col-span-2 space-y-8">
+                                {history.length > 0 && <AnalysisHistory history={history} onSelectItem={handleSelectHistoryItem} onClearHistory={handleClearHistory} selectedId={selectedHistoryId} theme={theme} />}
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[300px] flex items-center justify-center">
+                                    {isLoading && <div className="text-center"><Spinner /><p className="mt-4 text-lg">Analyzing... this may take a moment.</p></div>}
+                                    {error && <div className="text-red-600 dark:text-red-400 text-center"><h3 className="font-bold text-lg mb-2">An Error Occurred</h3><p>{error}</p></div>}
+                                    {!isLoading && !error && analysisResults && (
+                                        <div className="w-full space-y-4 max-h-[80vh] overflow-y-auto p-2">
+                                            <h2 className="text-2xl font-bold text-center mb-4">Analysis Complete</h2>
+                                            <p className="text-center text-sm text-slate-500 mb-4">Results are sorted by relevance score.</p>
+                                            {analysisResults.map(({ resumeFileName, result }, index) => (
+                                                <div key={index} className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h3 className="font-bold text-lg text-slate-900 dark:text-slate-50">Candidate: {result.candidateName}</h3>
+                                                        <span className={`px-3 py-1 text-xs font-semibold rounded-full ${result.fitVerdict === 'High' ? 'bg-green-100 text-green-800' : result.fitVerdict === 'Medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{result.fitVerdict} Fit</span>
+                                                    </div>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">File: {resumeFileName}</p>
+                                                    <AnalysisResult data={result} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {!isLoading && !error && !analysisResults && viewedAnalysisResult && <AnalysisResult data={viewedAnalysisResult} />}
+                                    {!isLoading && !error && !analysisResults && !viewedAnalysisResult && <div className="text-center text-slate-500 dark:text-slate-400"><h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200">Ready to Analyze</h2><p className="mt-2">Upload a resume and job description to get started.</p></div>}
+                                </div>
+                            </div>
+                        </div>
                     ) : (
                         <AboutUs />
                     )}
