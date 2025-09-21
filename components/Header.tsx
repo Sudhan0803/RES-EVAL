@@ -1,5 +1,5 @@
 import React from 'react';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { SparklesIcon } from './icons/SparklesIcon.tsx';
 
 // Sun and Moon Icons for the toggle
 const SunIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

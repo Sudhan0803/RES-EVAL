@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BriefcaseIcon } from './icons/BriefcaseIcon';
+import { BriefcaseIcon } from './icons/BriefcaseIcon.tsx';
 
 // --- Inlined SVG Icons for enhanced UI ---
 const ExperienceIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

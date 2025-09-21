@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import type { AnalysisHistoryItem, SortOption } from '../types';
-import { FitVerdict } from '../types';
+import type { AnalysisHistoryItem, SortOption } from '../types.ts';
+import { FitVerdict } from '../types.ts';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 

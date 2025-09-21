@@ -1,4 +1,4 @@
-import type { AnalysisHistoryItem, AnalysisResultData } from '../types';
+import type { AnalysisHistoryItem, AnalysisResultData } from '../types.ts';
 
 const HISTORY_KEY = 'skill-scan-history';
 

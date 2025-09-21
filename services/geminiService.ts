@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { AnalysisResultData } from "../types";
+import type { AnalysisResultData } from "../types.ts";
 
 // The API key is encoded in Base64 to obfuscate it from plain text view.
 const ENCODED_API_KEY = "QUl6YVN5Q25CUmZhVF85cDdiWURkRW1USmFZYjhlTFJLXzgxarmr";

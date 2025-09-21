@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import type { AnalysisResultData } from '../types';
-import { FitVerdict } from '../types';
+import type { AnalysisResultData } from '../types.ts';
+import { FitVerdict } from '../types.ts';
 
 interface AnalysisResultProps {
   data: AnalysisResultData;

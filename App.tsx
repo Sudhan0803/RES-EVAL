@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Header from './components/Header';
-import { ResumeUpload } from './components/ResumeInput';
-import { JobDescriptionInput } from './components/JobDescriptionInput';
-import { Button } from './components/Button';
-import { AnalysisResult } from './components/AnalysisResult';
-import { Spinner } from './components/Spinner';
-import { AnalysisHistory } from './components/AnalysisHistory';
-import { analyzeResume } from './services/geminiService';
-import { getHistory, addHistoryItem, clearHistory } from './services/localStorageService';
-import type { AnalysisResultData, AnalysisHistoryItem, SortOption, FitVerdict } from './types';
-import { SparklesIcon } from './components/icons/SparklesIcon';
-import { parseFileAsText } from './utils/fileParser';
-import { AboutUs } from './components/AboutUs';
+import Header from './components/Header.tsx';
+import { ResumeUpload } from './components/ResumeInput.tsx';
+import { JobDescriptionInput } from './components/JobDescriptionInput.tsx';
+import { Button } from './components/Button.tsx';
+import { AnalysisResult } from './components/AnalysisResult.tsx';
+import { Spinner } from './components/Spinner.tsx';
+import { AnalysisHistory } from './components/AnalysisHistory.tsx';
+import { analyzeResume } from './services/geminiService.ts';
+import { getHistory, addHistoryItem, clearHistory } from './services/localStorageService.ts';
+import type { AnalysisResultData, AnalysisHistoryItem, SortOption, FitVerdict } from './types.ts';
+import { SparklesIcon } from './components/icons/SparklesIcon.tsx';
+import { parseFileAsText } from './utils/fileParser.ts';
+import { AboutUs } from './components/AboutUs.tsx';
 
 type View = 'analyzer' | 'about';
 

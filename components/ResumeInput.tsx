@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { DocumentIcon } from './icons/DocumentIcon';
+import { DocumentIcon } from './icons/DocumentIcon.tsx';
 
 // Inlined SVG Icons to avoid creating new files
 const UploadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
