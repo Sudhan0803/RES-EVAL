@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,7 +13,6 @@
     "imports": {
       "react": "https://aistudiocdn.com/react@^19.1.1",
       "react-dom/client": "https://aistudiocdn.com/react-dom@^19.1.1/client",
-      "@google/genai": "https://aistudiocdn.com/@google/genai@^1.20.0",
       "recharts": "https://aistudiocdn.com/recharts@^2.12.7",
       "pdfjs-dist/build/pdf.min.mjs": "https://aistudiocdn.com/pdfjs-dist@^4.5.136/build/pdf.min.mjs",
       "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
@@ -34,7 +32,6 @@
     
     import React, { useState, useEffect, useMemo, useRef } from 'react';
     import ReactDOM from 'react-dom/client';
-    import { GoogleGenAI, Type } from "@google/genai";
     import * as pdfjsLib from 'pdfjs-dist/build/pdf.min.mjs';
     import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
     import jsPDF from 'jspdf';
@@ -112,42 +109,68 @@
     };
 
     //==================================================================
-    // GEMINI SERVICE
+    // LOCAL ANALYSIS ALGORITHM (NO API KEY NEEDED)
     //==================================================================
-    const ENCODED_API_KEY = "QUl6YVN5Q25CUmZhVF85cDdiWURkRW1USmFZYjhlTFJLXzgxajJr"; // Corrected Key
-    const analysisSchema = {
-        type: Type.OBJECT,
-        properties: {
-            candidateName: { type: Type.STRING, description: "The full name of the candidate as extracted from the resume. If no name is found, return 'N/A'." },
-            relevanceScore: { type: Type.INTEGER, description: "A score from 0 to 100 representing how well the resume matches the job description." },
-            fitVerdict: { type: Type.STRING, enum: ["High", "Medium", "Low"], description: "A verdict on the candidate's suitability for the role." },
-            missingElements: { type: Type.ARRAY, description: "A list of key skills, technologies, or qualifications from the job description that are missing from the resume.", items: { type: Type.OBJECT, properties: { type: { type: Type.STRING, description: "The category of the missing element (e.g., 'Skill', 'Certification', 'Project')." }, details: { type: Type.STRING, description: "Specific details about the missing element." } }, required: ["type", "details"] } },
-            feedback: { type: Type.STRING, description: "Concise, actionable feedback for the student on how to improve their resume for this specific role. This should be constructive and encouraging." },
-            jobTitleSuggestions: { type: Type.ARRAY, description: "A list of suggestions for non-standard job titles found in the resume. If no non-standard titles are found, this should be an empty array.", items: { type: Type.OBJECT, properties: { original: { type: Type.STRING, description: "The original, non-standard job title found in the resume (e.g., 'Software Ninja')." }, suggestion: { type: Type.STRING, description: "The suggested standard or more common job title (e.g., 'Software Engineer')." } }, required: ["original", "suggestion"] } },
-            achievementImpacts: { type: Type.ARRAY, description: "An analysis of key achievement bullet points from the resume, estimating their real-world impact and flagging exaggeration. If no achievements are found, this should be an empty array.", items: { type: Type.OBJECT, properties: { achievementText: { type: Type.STRING, description: "The original achievement bullet point text from the resume." }, estimatedImpact: { type: Type.STRING, description: "A realistic, quantified or qualified estimation of the achievement's impact (e.g., 'Likely a 5-10% efficiency improvement', 'Represents a standard project completion')." }, justification: { type: Type.STRING, description: "A brief justification for the estimated impact, explaining why it's realistic or potentially inflated." } }, required: ["achievementText", "estimatedImpact", "justification"] } }
-        },
-        required: ["candidateName", "relevanceScore", "fitVerdict", "missingElements", "feedback", "jobTitleSuggestions", "achievementImpacts"],
+    const STOP_WORDS = new Set(['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now']);
+
+    const extractKeywords = (text) => {
+        if (!text) return new Set();
+        const words = text.toLowerCase()
+            .replace(/[^\w\s-]/g, ' ') // Allow hyphens
+            .split(/\s+/)
+            .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+        return new Set(words);
     };
 
-    const analyzeResume = async (resumeText, jobDescription, language) => {
-        const apiKey = atob(ENCODED_API_KEY);
-        if (!apiKey) throw new Error("API key is missing or could not be decoded.");
-        const ai = new GoogleGenAI({ apiKey });
-        const prompt = `You are an expert AI-powered resume evaluation engine named Skill Scan. Your task is to analyze a candidate's resume against a provided job description. Job Description: --- ${jobDescription} --- Candidate's Resume: --- ${resumeText} --- Strictly follow these instructions: 1. Identify and extract the full name of the candidate from the resume text. Return it as 'candidateName'. If a name cannot be clearly identified, return 'N/A'. 2. Calculate a 'Relevance Score' from 0 to 100 representing the match between the resume and the job description. 3. Provide a 'Fit Verdict' which must be one of 'High', 'Medium', or 'Low'. 4. Identify 'Missing Elements' from the resume based on the job description. 5. Generate concise, actionable 'Feedback' for the student on how to improve their resume. 6. Analyze the job titles listed in the resume. Identify any unconventional titles and suggest a standard equivalent in 'jobTitleSuggestions'. If none, return an empty array. 7. Scrutinize achievement-oriented statements. Estimate the real-world impact and provide a justification in 'achievementImpacts'. If none, return an empty array. 8. IMPORTANT: The entire response, especially feedback and details, MUST be in ${language}. You MUST return your analysis in a JSON format that strictly adheres to the provided schema. Do not include any text or markdown outside of the JSON structure.`;
-        try {
-            const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt, config: { responseMimeType: "application/json", responseSchema: analysisSchema } });
-            const result = JSON.parse(response.text.trim());
-            if (!result.jobTitleSuggestions) result.jobTitleSuggestions = [];
-            if (!result.achievementImpacts) result.achievementImpacts = [];
-            if (!result.candidateName) result.candidateName = 'N/A';
-            return result;
-        } catch (error) {
-            console.error("Error calling Gemini API:", error);
-            if (error instanceof Error && error.message.includes('API key not valid')) throw new Error("The embedded API key is not valid. Please contact the developer.");
-            throw new Error("Failed to get analysis from Gemini API.");
+    const localAnalyzeResume = async (resumeText, jobDescription) => {
+        const jdKeywords = extractKeywords(jobDescription);
+        const resumeKeywords = extractKeywords(resumeText);
+
+        if (jdKeywords.size === 0) {
+            throw new Error("Job description is empty or contains no keywords to analyze.");
         }
+
+        let matchCount = 0;
+        const missingElements = [];
+
+        for (const keyword of jdKeywords) {
+            if (resumeKeywords.has(keyword)) {
+                matchCount++;
+            } else {
+                missingElements.push({ type: 'Keyword', details: keyword });
+            }
+        }
+
+        const relevanceScore = Math.min(100, Math.round((matchCount / jdKeywords.size) * 100));
+        
+        let fitVerdict = FitVerdict.Low;
+        if (relevanceScore > 70) {
+            fitVerdict = FitVerdict.High;
+        } else if (relevanceScore >= 40) {
+            fitVerdict = FitVerdict.Medium;
+        }
+
+        let feedback = '';
+        const missingKeywordsExample = missingElements.slice(0, 5).map(e => e.details).join(', ');
+        if (fitVerdict === FitVerdict.Low) {
+            feedback = `The resume appears to be missing several key requirements for this role. To improve the match, focus on highlighting skills and experiences related to these keywords from the job description: ${missingKeywordsExample}.`;
+        } else if (fitVerdict === FitVerdict.Medium) {
+            feedback = `This is a reasonable match. To strengthen the resume for this specific role, consider providing more detail or explicitly mentioning experience with the following: ${missingKeywordsExample}.`;
+        } else {
+            feedback = 'This resume is a strong match for the job description. The skills and experiences align well with the core requirements of the role.';
+        }
+
+        return {
+            candidateName: 'N/A', // Placeholder, will be replaced by filename.
+            relevanceScore,
+            fitVerdict,
+            missingElements: missingElements.slice(0, 10), // Show top 10 missing
+            feedback,
+            jobTitleSuggestions: [], // Not supported by local algorithm
+            achievementImpacts: [], // Not supported by local algorithm
+        };
     };
-    
+
     //==================================================================
     // ICONS
     //==================================================================
@@ -250,27 +273,51 @@
         );
     };
 
-    const JobDescriptionInput = ({ onJdChange, language, setLanguage }) => {
+    const JobDescriptionInput = ({ onJdChange }) => {
         const [jdText, setJdText] = useState('');
+        const PREDEFINED_JDS = {
+            'custom': 'Paste your job description here...',
+            'frontend': 'Seeking a Frontend Developer with 3+ years of experience in React, TypeScript, and CSS. Must have a strong understanding of web performance, accessibility, and state management libraries like Redux or Zustand. Experience with Next.js and GraphQL is a plus.',
+            'project_manager': 'We are looking for an experienced Project Manager to oversee a wide variety of projects. You will be responsible for planning, executing, and finalizing projects according to strict deadlines and within budget. Experience with Agile methodologies, Scrum, and tools like Jira is required.',
+            'data_analyst': 'Hiring a Data Analyst to interpret data and turn it into information which can offer ways to improve a business. Must have strong experience with SQL, Python (Pandas, NumPy), and data visualization tools like Tableau or Power BI. A background in statistics is highly desirable.'
+        };
+        
+        const handleSelectionChange = (e) => {
+            const selectedKey = e.target.value;
+            const newJdText = PREDEFINED_JDS[selectedKey] || '';
+            setJdText(newJdText);
+            onJdChange(newJdText);
+        };
+
+        const handleTextChange = (e) => {
+            const newText = e.target.value;
+            setJdText(newText);
+            onJdChange(newText);
+        }
+
         return (
           <div>
             <div className="flex items-center text-lg font-semibold text-slate-700 dark:text-slate-200">
                 <BriefcaseIcon className="w-6 h-6 mr-2 text-slate-500 dark:text-slate-400" />
                 <h2>Job Description</h2>
             </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">Paste the job description below.</p>
-            <textarea
-                rows="10"
-                className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50"
-                placeholder="Paste the full job description here..."
-                onChange={(e) => onJdChange(e.target.value)}
-            ></textarea>
-            <div className="mt-4">
-                <label htmlFor="analysis-language" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Feedback Language</label>
-                <select id="analysis-language" value={language} onChange={(e) => setLanguage(e.target.value)} className="block w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:text-sm">
-                    {['English', 'Spanish', 'French', 'German', 'Japanese', 'Mandarin Chinese', 'Portuguese'].map(lang => <option key={lang} value={lang}>{lang}</option>)}
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">Select a template or paste a custom job description below.</p>
+            <div className="mb-4">
+                 <label htmlFor="jd-selector" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select a Template</label>
+                 <select id="jd-selector" onChange={handleSelectionChange} className="block w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:text-sm">
+                    <option value="custom">-- Custom Job Description --</option>
+                    <option value="frontend">Frontend Developer</option>
+                    <option value="project_manager">Project Manager</option>
+                    <option value="data_analyst">Data Analyst</option>
                 </select>
             </div>
+            <textarea
+                rows="10"
+                value={jdText}
+                className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50"
+                placeholder="Paste the full job description here..."
+                onChange={handleTextChange}
+            ></textarea>
           </div>
         );
     };
@@ -334,16 +381,14 @@
                         <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Relevance Score</span><ScoreGauge score={data.relevanceScore} /></div>
                         <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Fit Verdict</span><span className={`px-4 py-1.5 text-lg font-semibold rounded-full ${getVerdictClass(data.fitVerdict)}`}>{data.fitVerdict}</span></div>
                     </div>
-                    {data.jobTitleSuggestions?.length > 0 && <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Job Title Suggestions</h3><ul className="list-disc list-inside space-y-1">{data.jobTitleSuggestions.map((item, i) => <li key={i}><span className="font-semibold">{item.original}</span> → <span className="font-semibold">{item.suggestion}</span></li>)}</ul></div>}
-                    {data.achievementImpacts?.length > 0 && <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Achievement Impact Analysis</h3>{data.achievementImpacts.map((item, i) => <div key={i} className="mb-2"><p className="italic">"{item.achievementText}"</p><p><b className="font-semibold">Impact:</b> {item.estimatedImpact}</p><p><b className="font-semibold">Justification:</b> {item.justification}</p></div>)}</div>}
-                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Missing Elements</h3>{data.missingElements.length > 0 ? <ul className="list-disc list-inside space-y-1">{data.missingElements.map((item, i) => <li key={i}><b className="font-semibold">{item.type}:</b> {item.details}</li>)}</ul> : <p>No significant gaps found in the resume.</p>}</div>
-                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Personalized Feedback</h3><p>{data.feedback}</p></div>
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Missing Keywords</h3>{data.missingElements.length > 0 ? <p className="text-slate-600 dark:text-slate-300">{data.missingElements.map(item => item.details).join(', ')}</p> : <p>No significant keyword gaps found in the resume.</p>}</div>
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Actionable Feedback</h3><p>{data.feedback}</p></div>
                 </div>
             </div>
         );
     };
     
-    const AnalysisHistory = ({ theme, history, onSelectItem, onClearHistory, selectedId, sortOption, onSortChange, filterVerdicts, onFilterChange, onClearFilters }) => {
+    const AnalysisHistory = ({ theme, history, onSelectItem, onClearHistory, selectedId }) => {
         const CustomTooltip = ({ active, payload, label }) => { if (active && payload?.length) { return <div className="p-2 bg-white dark:bg-slate-800 border rounded-md shadow-lg"><p className="font-semibold">{`Score Range: ${label}`}</p><p>{`Analyses: ${payload[0].value}`}</p></div>; } return null; };
         const chartData = useMemo(() => { const brackets = Array(10).fill(0).map((_, i) => ({ name: `${i*10+1}-${(i+1)*10}`, count: 0 })); history.forEach(item => { const score = item.result.relevanceScore; if (score > 0) { const index = Math.min(Math.floor((score - 1) / 10), 9); brackets[index].count++; } }); return brackets; }, [history]);
         return (
@@ -354,12 +399,14 @@
                 </div>
                 <div className="w-full h-52 mb-6">
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} /><XAxis dataKey="name" tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><YAxis allowDecimals={false} tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 1000 }}/><Bar dataKey="count">{chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={index < 4 ? '#ef4444' : index < 6 ? '#f59e0b' : '#22c55e'} />)}</Bar></BarChart>
+                        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} /><XAxis dataKey="name" tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><YAxis allowDecimals={false} tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 1000 }}/><Bar dataKey="count">{chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={index < 4 ? '#ef4444' : index < 7 ? '#f59e0b' : '#22c55e'} />)}</Bar></BarChart>
                     </ResponsiveContainer>
                 </div>
-                <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                    {history.map(item => (<li key={item.id}><button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><p className="font-bold">{item.candidateName}</p><p className="text-sm">{item.timestamp.toLocaleString()}</p><p className="font-bold text-lg">{item.result.relevanceScore}</p></button></li>))}
-                </ul>
+                {history.length > 0 ? (
+                    <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                        {history.map(item => (<li key={item.id}><button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><p className="font-bold">{item.candidateName}</p><p className="text-sm text-slate-500 dark:text-slate-400">{item.timestamp.toLocaleString()}</p><p className="font-bold text-lg">{item.result.relevanceScore}% Match</p></button></li>))}
+                    </ul>
+                ) : <p className="text-center text-slate-500">No history yet.</p>}
             </div>
         );
     };
@@ -390,7 +437,6 @@
     const App = () => {
         const [currentView, setCurrentView] = useState('analyzer');
         const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
-        const [language, setLanguage] = useState('English');
         const [resumeFiles, setResumeFiles] = useState([]);
         const [resumeTexts, setResumeTexts] = useState([]);
         const [jdText, setJdText] = useState('');
@@ -450,12 +496,16 @@
             setViewedAnalysisResult(null);
             setSelectedHistoryId(null);
             try {
-                const results = await Promise.all(resumeTexts.map((text, i) => 
-                    analyzeResume(text, jdText, language).then(result => ({
+                // Use the new local algorithm instead of the API
+                const results = await Promise.all(resumeTexts.map(async (text, i) => {
+                    const result = await localAnalyzeResume(text, jdText);
+                    const candidateName = resumeFiles[i].name.replace(/\.pdf$/i, ''); // Use filename as candidate name
+                    result.candidateName = candidateName;
+                    return {
                         resumeFileName: resumeFiles[i].name,
                         result
-                    }))
-                ));
+                    };
+                }));
                 results.sort((a, b) => b.result.relevanceScore - a.result.relevanceScore);
                 setAnalysisResults(results);
                 results.forEach(({ resumeFileName, result }) => addHistoryItem({
@@ -466,7 +516,7 @@
                 }));
                 setHistory(getHistory());
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+                setError(err instanceof Error ? err.message : 'An unknown error occurred during local analysis.');
             } finally {
                 setIsLoading(false);
             }
@@ -499,7 +549,7 @@
                                     <ResumeUpload onFileSelect={handleResumeSelect} selectedFiles={resumeFiles} isParsing={isParsingResumes} />
                                 </div>
                                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                                    <JobDescriptionInput onJdChange={setJdText} language={language} setLanguage={setLanguage} />
+                                    <JobDescriptionInput onJdChange={setJdText} />
                                 </div>
                                 <div className="text-center">
                                     <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading || isParsingResumes}>
