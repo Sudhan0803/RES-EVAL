@@ -114,7 +114,7 @@
     //==================================================================
     // GEMINI SERVICE
     //==================================================================
-    const ENCODED_API_KEY = "QUl6YVN5Q25CUmZhVF85cDdiWURkRW1USmFZYjhlTFJLXzgxarmr";
+    const ENCODED_API_KEY = "QUl6YVN5Q25CUmZhVF85cDdiWURkRW1USmFZYjhlTFJLXzgxajJr"; // Corrected Key
     const analysisSchema = {
         type: Type.OBJECT,
         properties: {
@@ -291,8 +291,38 @@
             if (score >= 50) return 'text-yellow-600 dark:text-yellow-400';
             return 'text-red-600 dark:text-red-400';
         };
-        const ScoreGauge = ({ score }) => { /* ... gauge SVG ... */ return <div className="relative w-32 h-32"><svg className="w-full h-full" viewBox="0 0 100 100"><circle className="text-slate-200 dark:text-slate-700" strokeWidth="10" stroke="currentColor" fill="transparent" r="45" cx="50" cy="50" /><circle strokeWidth="10" strokeDasharray={2 * Math.PI * 45} strokeDashoffset={(2 * Math.PI * 45) - (score / 100) * (2 * Math.PI * 45)} strokeLinecap="round" stroke={score >= 75 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444'} fill="transparent" r="45" cx="50" cy="50" className="-rotate-90 origin-center" /></svg><div className={`absolute inset-0 flex items-center justify-center text-3xl font-bold ${getScoreColor(score)}`}>{score}</div></div>; };
-        const handleDownloadPdf = async () => { /* ... PDF generation logic ... */ setIsDownloading(true); try { const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: document.documentElement.classList.contains('dark') ? '#1e293b' : '#ffffff' }); const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4', hotfixes: ['px_scaling'] }); const pdfWidth = pdf.internal.pageSize.getWidth(); const scaledHeight = canvas.height / (canvas.width / pdfWidth); pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, scaledHeight); pdf.save(`SkillScan_Analysis_${data.candidateName || 'Report'}.pdf`); } catch(e) { console.error(e); alert("Failed to generate PDF.") } finally { setIsDownloading(false); } };
+        const ScoreGauge = ({ score }) => (
+          <div className="relative w-32 h-32">
+            <svg className="w-full h-full" viewBox="0 0 100 100">
+              <circle className="text-slate-200 dark:text-slate-700" strokeWidth="10" stroke="currentColor" fill="transparent" r="45" cx="50" cy="50" />
+              <circle strokeWidth="10" strokeDasharray={2 * Math.PI * 45} strokeDashoffset={(2 * Math.PI * 45) - (score / 100) * (2 * Math.PI * 45)} strokeLinecap="round" stroke={score >= 75 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444'} fill="transparent" r="45" cx="50" cy="50" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }} />
+            </svg>
+            <div className={`absolute inset-0 flex items-center justify-center text-3xl font-bold ${getScoreColor(score)}`}>{score}</div>
+          </div>
+        );
+        const handleDownloadPdf = async () => {
+          setIsDownloading(true); 
+          try { 
+            const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: document.documentElement.classList.contains('dark') ? '#1e293b' : '#ffffff' }); 
+            const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4', hotfixes: ['px_scaling'] }); 
+            const pdfWidth = pdf.internal.pageSize.getWidth(); 
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const ratio = canvasHeight / canvasWidth;
+            let finalHeight = pdfWidth * ratio;
+            if (finalHeight > pdfHeight) {
+                finalHeight = pdfHeight;
+            }
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, finalHeight); 
+            pdf.save(`SkillScan_Analysis_${data.candidateName || 'Report'}.pdf`); 
+          } catch(e) { 
+            console.error(e); 
+            alert("Failed to generate PDF.") 
+          } finally { 
+            setIsDownloading(false); 
+          } 
+        };
         return (
             <div className="w-full animate-fade-in">
                 <div className="flex justify-between items-center mb-6">
@@ -300,36 +330,35 @@
                     <button onClick={handleDownloadPdf} disabled={isDownloading} className="flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-slate-400">{isDownloading ? 'Downloading...' : 'Download PDF'}</button>
                 </div>
                 <div ref={reportRef} className="p-4 bg-white dark:bg-slate-800 space-y-6">
-                    <div className="flex items-center justify-center gap-6 p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
-                        <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300">Relevance Score</span><ScoreGauge score={data.relevanceScore} /></div>
-                        <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300">Fit Verdict</span><span className={`px-4 py-1.5 text-lg font-semibold rounded-full ${getVerdictClass(data.fitVerdict)}`}>{data.fitVerdict}</span></div>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-6 p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
+                        <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Relevance Score</span><ScoreGauge score={data.relevanceScore} /></div>
+                        <div className="flex flex-col items-center"><span className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Fit Verdict</span><span className={`px-4 py-1.5 text-lg font-semibold rounded-full ${getVerdictClass(data.fitVerdict)}`}>{data.fitVerdict}</span></div>
                     </div>
-                    {data.jobTitleSuggestions?.length > 0 && <div><h3 className="text-lg font-semibold">Job Title Suggestions</h3><ul>{data.jobTitleSuggestions.map((item, i) => <li key={i}>{item.original} → {item.suggestion}</li>)}</ul></div>}
-                    {data.achievementImpacts?.length > 0 && <div><h3 className="text-lg font-semibold">Achievement Impact Analysis</h3>{data.achievementImpacts.map((item, i) => <div key={i}><p>"{item.achievementText}"</p><p><b>Impact:</b> {item.estimatedImpact}</p><p><b>Justification:</b> {item.justification}</p></div>)}</div>}
-                    <div><h3 className="text-lg font-semibold">Missing Elements</h3>{data.missingElements.length > 0 ? <ul>{data.missingElements.map((item, i) => <li key={i}><b>{item.type}:</b> {item.details}</li>)}</ul> : <p>No significant gaps found.</p>}</div>
-                    <div><h3 className="text-lg font-semibold">Personalized Feedback</h3><p>{data.feedback}</p></div>
+                    {data.jobTitleSuggestions?.length > 0 && <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Job Title Suggestions</h3><ul className="list-disc list-inside space-y-1">{data.jobTitleSuggestions.map((item, i) => <li key={i}><span className="font-semibold">{item.original}</span> → <span className="font-semibold">{item.suggestion}</span></li>)}</ul></div>}
+                    {data.achievementImpacts?.length > 0 && <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Achievement Impact Analysis</h3>{data.achievementImpacts.map((item, i) => <div key={i} className="mb-2"><p className="italic">"{item.achievementText}"</p><p><b className="font-semibold">Impact:</b> {item.estimatedImpact}</p><p><b className="font-semibold">Justification:</b> {item.justification}</p></div>)}</div>}
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Missing Elements</h3>{data.missingElements.length > 0 ? <ul className="list-disc list-inside space-y-1">{data.missingElements.map((item, i) => <li key={i}><b className="font-semibold">{item.type}:</b> {item.details}</li>)}</ul> : <p>No significant gaps found in the resume.</p>}</div>
+                    <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-700/50"><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Personalized Feedback</h3><p>{data.feedback}</p></div>
                 </div>
             </div>
         );
     };
     
     const AnalysisHistory = ({ theme, history, onSelectItem, onClearHistory, selectedId, sortOption, onSortChange, filterVerdicts, onFilterChange, onClearFilters }) => {
-        const CustomTooltip = ({ active, payload, label }) => { if (active && payload?.length) { return <div className="p-2 bg-white dark:bg-slate-800 border rounded-md shadow-lg"><p>{`Score Range: ${label}`}</p><p>{`Analyses: ${payload[0].value}`}</p></div>; } return null; };
+        const CustomTooltip = ({ active, payload, label }) => { if (active && payload?.length) { return <div className="p-2 bg-white dark:bg-slate-800 border rounded-md shadow-lg"><p className="font-semibold">{`Score Range: ${label}`}</p><p>{`Analyses: ${payload[0].value}`}</p></div>; } return null; };
         const chartData = useMemo(() => { const brackets = Array(10).fill(0).map((_, i) => ({ name: `${i*10+1}-${(i+1)*10}`, count: 0 })); history.forEach(item => { const score = item.result.relevanceScore; if (score > 0) { const index = Math.min(Math.floor((score - 1) / 10), 9); brackets[index].count++; } }); return brackets; }, [history]);
         return (
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                <div className="flex justify-between mb-4">
-                    <h2 className="text-xl font-bold">Analysis History</h2>
-                    <button onClick={onClearHistory} className="text-sm text-red-600">Clear History</button>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Analysis History</h2>
+                    <button onClick={onClearHistory} className="text-sm font-medium text-red-600 hover:text-red-800 dark:hover:text-red-400">Clear History</button>
                 </div>
                 <div className="w-full h-52 mb-6">
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis allowDecimals={false} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="count"><Cell fill="#ef4444" /><Cell fill="#ef4444" /><Cell fill="#ef4444" /><Cell fill="#ef4444" /><Cell fill="#f59e0b" /><Cell fill="#f59e0b" /><Cell fill="#22c55e" /><Cell fill="#22c55e" /><Cell fill="#22c55e" /><Cell fill="#22c55e" /></Bar></BarChart>
+                        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} /><XAxis dataKey="name" tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><YAxis allowDecimals={false} tick={{ fill: theme === 'dark' ? '#94a3b8' : '#64748b' }} /><Tooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 1000 }}/><Bar dataKey="count">{chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={index < 4 ? '#ef4444' : index < 6 ? '#f59e0b' : '#22c55e'} />)}</Bar></BarChart>
                     </ResponsiveContainer>
                 </div>
-                {/* Sort and Filter UI would go here */}
-                <ul className="space-y-3 max-h-96 overflow-y-auto">
-                    {history.map(item => (<li key={item.id}><button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400' : 'bg-slate-50 border-slate-200'}`}>...</button></li>))}
+                <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    {history.map(item => (<li key={item.id}><button onClick={() => onSelectItem(item.id)} className={`w-full text-left p-4 rounded-lg border transition-colors ${item.id === selectedId ? 'bg-indigo-50 border-indigo-400 dark:bg-indigo-900/30 dark:border-indigo-600' : 'bg-slate-50 border-slate-200 dark:bg-slate-700/50 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><p className="font-bold">{item.candidateName}</p><p className="text-sm">{item.timestamp.toLocaleString()}</p><p className="font-bold text-lg">{item.result.relevanceScore}</p></button></li>))}
                 </ul>
             </div>
         );
@@ -338,15 +367,16 @@
     const AboutUs = () => {
         const teamMembers = [ { name: 'Nagasudhan T', linkedin: 'https://www.linkedin.com/in/naga-sudhan-36bb88339/' }, { name: 'Sankarapandian A' }, { name: 'Prajith S' }, ];
         return (
-            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                <h2 className="text-3xl font-bold text-center mb-8">About Us</h2>
-                <p className="mb-4">We are a team of passionate developers — Nagasudhan T, Sankarapandian A, and Prajith S — who came together to solve a real challenge faced by companies during recruitment.</p>
-                <p className="mb-8">Our project, the Resume Evaluator App, is designed to simplify and speed up the hiring process by automatically analyzing and evaluating resumes... Our goal is to bring efficiency, accuracy, and ease to recruitment...</p>
-                <h3 className="text-2xl font-semibold text-center mb-4">Meet the Team</h3>
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-4xl mx-auto animate-fade-in">
+                <h2 className="text-3xl font-bold text-center text-slate-900 dark:text-slate-50 mb-8">About Us</h2>
+                <p className="mb-4 text-slate-600 dark:text-slate-300 leading-relaxed">We are a team of passionate developers — Nagasudhan T, Sankarapandian A, and Prajith S — who came together to solve a real challenge faced by companies during recruitment.</p>
+                <p className="mb-8 text-slate-600 dark:text-slate-300 leading-relaxed">Our project, the Resume Evaluator App, is designed to simplify and speed up the hiring process by automatically analyzing and evaluating resumes. The app can efficiently handle up to 1000 PDF resumes at once, making it easier for HR teams and recruiters to shortlist candidates quickly and accurately. Our goal is to bring efficiency, accuracy, and ease to recruitment, helping companies save time while focusing on what truly matters — finding the right talent.</p>
+                <div className="border-t border-slate-200 dark:border-slate-700 my-8"></div>
+                <h3 className="text-2xl font-semibold text-center text-slate-900 dark:text-slate-50 mb-4">Meet the Team</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     {teamMembers.map((member) => (
-                        <div key={member.name} className="text-center p-6 bg-slate-50 dark:bg-slate-700 rounded-lg">
-                            {member.linkedin ? <a href={member.linkedin} target="_blank" rel="noopener noreferrer" className="text-lg font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">{member.name}</a> : <p className="text-lg font-semibold">{member.name}</p>}
+                        <div key={member.name} className="text-center p-6 bg-slate-50 dark:bg-slate-700 rounded-lg shadow-sm">
+                            {member.linkedin ? <a href={member.linkedin} target="_blank" rel="noopener noreferrer" className="text-lg font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">{member.name}</a> : <p className="text-lg font-semibold text-slate-800 dark:text-slate-100">{member.name}</p>}
                         </div>
                     ))}
                 </div>
@@ -390,6 +420,7 @@
             setCurrentView(view);
             setAnalysisResults(null);
             setViewedAnalysisResult(null);
+            setSelectedHistoryId(null);
         };
 
         const handleResumeSelect = async (files) => {
@@ -417,6 +448,7 @@
             setError(null);
             setAnalysisResults(null);
             setViewedAnalysisResult(null);
+            setSelectedHistoryId(null);
             try {
                 const results = await Promise.all(resumeTexts.map((text, i) => 
                     analyzeResume(text, jdText, language).then(result => ({
@@ -434,7 +466,7 @@
                 }));
                 setHistory(getHistory());
             } catch (err) {
-                setError(err.message);
+                setError(err instanceof Error ? err.message : 'An unknown error occurred.');
             } finally {
                 setIsLoading(false);
             }
@@ -449,8 +481,15 @@
             }
         };
         
+        const handleClearHistory = () => {
+            clearHistory();
+            setHistory([]);
+            setViewedAnalysisResult(null);
+            setSelectedHistoryId(null);
+        }
+        
         return (
-            <div className="bg-slate-50 dark:bg-slate-900 min-h-screen font-sans">
+            <div className="bg-slate-50 dark:bg-slate-900 min-h-screen font-sans text-slate-800 dark:text-slate-200 transition-colors duration-300">
                 <Header theme={theme} setTheme={setTheme} onNavigate={handleNavigate} />
                 <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
                     {currentView === 'analyzer' ? (
@@ -463,30 +502,34 @@
                                     <JobDescriptionInput onJdChange={setJdText} language={language} setLanguage={setLanguage} />
                                 </div>
                                 <div className="text-center">
-                                    <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading}>
+                                    <Button onClick={handleAnalyze} disabled={resumeFiles.length === 0 || !jdText || isLoading || isParsingResumes}>
                                         {isLoading ? 'Analyzing...' : 'Analyze Now'}
                                     </Button>
                                 </div>
                             </div>
                             <div className="lg:col-span-2 space-y-8">
-                                {history.length > 0 && <AnalysisHistory history={history} onSelectItem={handleSelectHistoryItem} onClearHistory={() => { clearHistory(); setHistory([]); }} selectedId={selectedHistoryId} theme={theme} />}
+                                {history.length > 0 && <AnalysisHistory history={history} onSelectItem={handleSelectHistoryItem} onClearHistory={handleClearHistory} selectedId={selectedHistoryId} theme={theme} />}
                                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[300px] flex items-center justify-center">
-                                    {isLoading && <div className="text-center"><Spinner /><p>Analyzing...</p></div>}
-                                    {error && <div className="text-red-600"><h3>Error</h3><p>{error}</p></div>}
+                                    {isLoading && <div className="text-center"><Spinner /><p className="mt-4 text-lg">Analyzing... this may take a moment.</p></div>}
+                                    {error && <div className="text-red-600 dark:text-red-400 text-center"><h3 className="font-bold text-lg mb-2">An Error Occurred</h3><p>{error}</p></div>}
                                     {!isLoading && !error && analysisResults && (
-                                        <div className="w-full space-y-4">
-                                            <h2 className="text-2xl font-bold text-center">Analysis Complete</h2>
+                                        <div className="w-full space-y-4 max-h-[80vh] overflow-y-auto p-2">
+                                            <h2 className="text-2xl font-bold text-center mb-4">Analysis Complete</h2>
+                                            <p className="text-center text-sm text-slate-500 mb-4">Results are sorted by relevance score.</p>
                                             {analysisResults.map(({ resumeFileName, result }, index) => (
-                                                <div key={index} className="p-4 border rounded-lg">
-                                                    <h3 className="font-bold">Candidate: {result.candidateName}</h3>
-                                                    <p className="text-sm">File: {resumeFileName}</p>
+                                                <div key={index} className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h3 className="font-bold text-lg text-slate-900 dark:text-slate-50">Candidate: {result.candidateName}</h3>
+                                                        <span className={`px-3 py-1 text-xs font-semibold rounded-full ${result.fitVerdict === 'High' ? 'bg-green-100 text-green-800' : result.fitVerdict === 'Medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{result.fitVerdict} Fit</span>
+                                                    </div>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">File: {resumeFileName}</p>
                                                     <AnalysisResult data={result} />
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                     {!isLoading && !error && !analysisResults && viewedAnalysisResult && <AnalysisResult data={viewedAnalysisResult} />}
-                                    {!isLoading && !error && !analysisResults && !viewedAnalysisResult && <div className="text-center"><h2 className="text-xl font-semibold">Ready to Analyze</h2><p>Upload a resume and job description to get started.</p></div>}
+                                    {!isLoading && !error && !analysisResults && !viewedAnalysisResult && <div className="text-center text-slate-500 dark:text-slate-400"><h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200">Ready to Analyze</h2><p className="mt-2">Upload a resume and job description to get started.</p></div>}
                                 </div>
                             </div>
                         </div>
